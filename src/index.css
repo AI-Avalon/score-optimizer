@@ -1,9 +1,11 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
-@layer base {
-  body {
-    @apply bg-slate-base text-white m-0 p-0 overflow-hidden;
-  }
+@theme {
+  --color-slate-base: #0B0D13;
+  --color-slate-panel: #161922;
+  --color-slate-border: #272B35;
+}
+
+body {
+  @apply bg-slate-base text-white m-0 p-0 overflow-hidden;
 }
