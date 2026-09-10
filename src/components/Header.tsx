@@ -1,57 +1,142 @@
-import { useStore } from '../store/useScoreStore';
-import { Upload, FileDown, FileText } from 'lucide-react';
-import { useRef } from 'react';
+import { useCallback, useRef } from 'react';
+import { useScoreStore } from '../store/useScoreStore';
+import { ZoomHUD } from './ZoomHUD';
+import { FileText, Download, Menu } from 'lucide-react';
 
-export const Header = () => {
-  const { loadPdf, loadTestPdf, exportPdfDocument, isProcessing, originalFileName, pages } = useStore();
+/**
+ * Header — タイトル、PDF ドラッグ&ドロップ、テスト読込ボタン、ズームHUD、300DPI出力
+ */
+export function Header() {
+  const loadTestPdf = useScoreStore((s) => s.loadTestPdf);
+  const loadPdfFromFile = useScoreStore((s) => s.loadPdfFromFile);
+  const exportPdf = useScoreStore((s) => s.exportPdf);
+  const isExporting = useScoreStore((s) => s.isExporting);
+  const exportProgress = useScoreStore((s) => s.exportProgress);
+  const isLoading = useScoreStore((s) => s.isLoading);
+  const pdfFileName = useScoreStore((s) => s.pdfFileName);
+  const sidebarOpen = useScoreStore((s) => s.sidebarOpen);
+  const setSidebarOpen = useScoreStore((s) => s.setSidebarOpen);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const files = e.dataTransfer.files;
+      if (files.length > 0 && files[0].type === 'application/pdf') {
+        loadPdfFromFile(files[0]);
+      }
+    },
+    [loadPdfFromFile],
+  );
+
+  const handleFileSelect = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (file) loadPdfFromFile(file);
+    },
+    [loadPdfFromFile],
+  );
+
   return (
-    <header className="h-14 bg-[#161922] border-b border-[#272B35] flex items-center justify-between px-4 shrink-0 z-30 relative shadow-sm">
-      <div className="flex items-center gap-4">
-        <h1 className="font-semibold text-gray-200 hidden md:block">Score Optimizer</h1>
-        
-        <div className="flex gap-2">
-          <input 
-            type="file" 
-            accept="application/pdf" 
-            className="hidden" 
-            ref={fileInputRef}
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) loadPdf(file);
-            }}
-          />
-          <button 
-            onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-md transition-colors disabled:opacity-50"
-            disabled={isProcessing}
-          >
-            <Upload size={14} /> PDF読込
-          </button>
-          <button 
-            onClick={loadTestPdf}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#272B35] hover:bg-[#343A46] text-gray-200 text-xs rounded-md transition-colors disabled:opacity-50"
-            disabled={isProcessing}
-          >
-            <FileText size={14} /> テストPDFを読込
-          </button>
-        </div>
-      </div>
-      
-      <div className="flex items-center gap-4">
-        <span className="text-xs text-gray-400 hidden md:block truncate max-w-[200px]">
-          {pages.length > 0 ? `${originalFileName} (${pages.length} pages)` : 'ファイル未選択'}
-        </span>
-        
-        <button 
-          onClick={exportPdfDocument}
-          disabled={pages.length === 0 || isProcessing}
-          className="flex items-center gap-1.5 px-4 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs rounded-md transition-colors disabled:opacity-50 font-medium"
+    <header
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+      style={{
+        height: 'var(--header-height)',
+        minHeight: 'var(--header-height)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '0 12px',
+        borderBottom: '1px solid var(--color-border)',
+        background: 'var(--color-panel)',
+        gap: '8px',
+        flexShrink: 0,
+      }}
+    >
+      {/* Left: menu toggle + title */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+        <button
+          className="btn btn-sm"
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          aria-label="Toggle sidebar"
+          style={{ padding: '6px', flexShrink: 0 }}
         >
-          <FileDown size={14} /> 300DPI 書き出し
+          <Menu size={16} />
+        </button>
+
+        <span
+          style={{
+            fontSize: '14px',
+            fontWeight: 600,
+            color: 'var(--color-text)',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          Score Optimizer
+        </span>
+
+        {pdfFileName && (
+          <span
+            style={{
+              fontSize: '12px',
+              color: 'var(--color-text-muted)',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            — {pdfFileName}
+          </span>
+        )}
+      </div>
+
+      {/* Center: zoom HUD */}
+      <ZoomHUD />
+
+      {/* Right: load + export buttons */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+        <button
+          className="btn btn-sm"
+          onClick={loadTestPdf}
+          disabled={isLoading}
+        >
+          <FileText size={14} />
+          <span className="hide-mobile">📄 見開きテスト.pdf を読込</span>
+        </button>
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".pdf"
+          onChange={handleFileSelect}
+          style={{ display: 'none' }}
+        />
+        <button
+          className="btn btn-sm"
+          onClick={() => fileInputRef.current?.click()}
+        >
+          PDF追加
+        </button>
+
+        <button
+          className="btn btn-sm btn-accent"
+          onClick={exportPdf}
+          disabled={isExporting || isLoading}
+        >
+          <Download size={14} />
+          {isExporting ? `${exportProgress}%` : '300 DPI 出力'}
         </button>
       </div>
     </header>
   );
-};
+}

@@ -1,21 +1,59 @@
+import { useEffect } from 'react';
 import { Header } from './components/Header';
-import { Sidebar } from './components/pc/Sidebar';
-import { CanvasStage } from './components/pc/CanvasStage';
-import { Filmstrip } from './components/pc/Filmstrip';
+import { Sidebar } from './components/Sidebar';
+import { MainCanvas } from './components/MainCanvas';
+import { FilmStrip } from './components/FilmStrip';
+import { useScoreStore } from './store/useScoreStore';
 
-function App() {
+/**
+ * App — Score Optimizer 2.0 メインレイアウト
+ *
+ * ┌──────────── Header ─────────────────┐
+ * ├───────┬─────────────────────────────┤
+ * │ Side  │      MainCanvas              │
+ * │ bar   │                              │
+ * ├───────┴─────────────────────────────┤
+ * │         FilmStrip                    │
+ * └──────────────────────────────────────┘
+ *
+ * height: 100dvh, overflow: hidden — 見切れゼロ (ui-layout rule)
+ */
+export default function App() {
+  const cleanup = useScoreStore((s) => s.cleanup);
+
+  // pdf-lifecycle-reviewer: cleanup on unmount
+  useEffect(() => {
+    return () => {
+      cleanup();
+    };
+  }, [cleanup]);
+
   return (
-    <div className="flex flex-col h-[100dvh] w-screen overflow-hidden bg-[#0D0F12] text-white select-none">
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        width: '100vw',
+        height: '100dvh',
+        overflow: 'hidden',
+        background: 'var(--color-base)',
+      }}
+    >
       <Header />
-      <div className="flex flex-1 overflow-hidden">
+
+      <div
+        style={{
+          display: 'flex',
+          flex: 1,
+          minHeight: 0,
+          overflow: 'hidden',
+        }}
+      >
         <Sidebar />
-        <div className="flex-1 flex flex-col min-w-0">
-          <CanvasStage />
-          <Filmstrip />
-        </div>
+        <MainCanvas />
       </div>
+
+      <FilmStrip />
     </div>
   );
 }
-
-export default App;
