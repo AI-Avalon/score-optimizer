@@ -80,6 +80,17 @@ export const MobileWorkspace = () => {
               Page {i + 1} {p.isLandscape ? '(Spread)' : ''}
             </div>
           ))}
+
+          <button 
+            onClick={async () => {
+              const { exportToPdf } = await import('../exporter');
+              await exportToPdf(pages, selectedPreset);
+            }}
+            disabled={pages.length === 0}
+            className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed p-3 rounded text-sm font-bold mt-8"
+          >
+            PDF書き出し (300DPI)
+          </button>
         </div>
       </animated.div>
     </div>
