@@ -1,71 +1,239 @@
-import type { Page, Preset } from './types';
+import type { ScorePage, PaperPreset, MarginConfig } from './types';
 
-export const DPI = 300;
-const MM_TO_INCH = 1 / 25.4;
+/** 定数: 印刷DPI */
+export const PRINT_DPI = 300;
+/** mm→インチ変換係数 */
+const MM_PER_INCH = 25.4;
+/** PDF標準DPI */
+const PDF_DPI = 72;
+/** 印刷品質エクスポート時のスケール */
+export const EXPORT_SCALE = PRINT_DPI / PDF_DPI; // ~4.167
+/** プレビュー表示用スケール */
+export const PREVIEW_SCALE = 0.2;
 
-export const mmToPx = (mm: number, scale = 1.0) => Math.round(mm * MM_TO_INCH * DPI * scale);
+/** mm値をピクセルに変換（指定スケール適用） */
+export const mmToPx = (mm: number, scale = 1.0): number =>
+  Math.round((mm / MM_PER_INCH) * PRINT_DPI * scale);
 
-export const renderPageToCanvas = async (
-  page: Page,
-  preset: Preset,
+/**
+ * アスペクト比を保持したまま、ソース矩形を描画先矩形にフィットさせる計算
+ */
+const fitAspectRatio = (
+  srcW: number,
+  srcH: number,
+  dstW: number,
+  dstH: number
+): { w: number; h: number; x: number; y: number } => {
+  const srcAspect = srcW / srcH;
+  const dstAspect = dstW / dstH;
+  let w: number, h: number;
+  if (srcAspect > dstAspect) {
+    // ソースのほうが横長 → 幅に合わせる
+    w = dstW;
+    h = dstW / srcAspect;
+  } else {
+    // ソースのほうが縦長 → 高さに合わせる
+    h = dstH;
+    w = dstH * srcAspect;
+  }
+  return { w, h, x: (dstW - w) / 2, y: (dstH - h) / 2 };
+};
+
+/**
+ * 1ページ分をキャンバスにレンダリングする。
+ * 
+ * @param page - ソースページデータ
+ * @param preset - 出力用紙プリセット
+ * @param side - 見開き分割時の左右指定、またはsingle
+ * @param scale - レンダリングスケール（プレビュー=0.2, エクスポート=300/72）
+ * @param margins - マージン設定
+ * @param accordionMode - 蛇腹製本モード
+ */
+export const renderPage = async (
+  page: ScorePage,
+  preset: PaperPreset,
   side: 'left' | 'right' | 'single',
-  scale = 1.0
+  scale: number,
+  margins: MarginConfig,
+  accordionMode: boolean
 ): Promise<HTMLCanvasElement> => {
-  return new Promise((resolve, reject) => {
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return reject(new Error('No 2d context'));
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas 2Dコンテキストの取得に失敗');
 
-    const widthPx = mmToPx(preset.widthMm, scale);
-    const heightPx = mmToPx(preset.heightMm, scale);
-    canvas.width = widthPx;
-    canvas.height = heightPx;
+  // 出力キャンバスサイズ（用紙全体）
+  const paperW = mmToPx(preset.widthMm, scale);
+  const paperH = mmToPx(preset.heightMm, scale);
+  canvas.width = paperW;
+  canvas.height = paperH;
 
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, widthPx, heightPx);
+  // 白背景
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, paperW, paperH);
 
-    if (!page.imageUrl) {
-      return resolve(canvas);
+  // 白紙ページはそのまま返す
+  if (page.isBlank || !page.imageUrl) {
+    return canvas;
+  }
+
+  // 元画像をロード
+  const img = await loadImage(page.imageUrl);
+
+  // マージン領域を計算
+  const effectiveMargins = accordionMode
+    ? { top: margins.top, bottom: margins.bottom, left: margins.left, right: margins.right }
+    : margins;
+  const marginLeft = mmToPx(effectiveMargins.left, scale);
+  const marginRight = mmToPx(effectiveMargins.right, scale);
+  const marginTop = mmToPx(effectiveMargins.top, scale);
+  const marginBottom = mmToPx(effectiveMargins.bottom, scale);
+  const printableW = paperW - marginLeft - marginRight;
+  const printableH = paperH - marginTop - marginBottom;
+
+  // 傾き補正の適用
+  if (page.deskew) {
+    ctx.save();
+    ctx.translate(paperW / 2, paperH / 2);
+    ctx.rotate(-page.deskew.angleRad);
+    ctx.translate(-paperW / 2, -paperH / 2);
+  }
+
+  // 回転処理（元画像の実効サイズを計算）
+  let effectiveImgW = img.width;
+  let effectiveImgH = img.height;
+  if (page.rotation === 90 || page.rotation === 270) {
+    effectiveImgW = img.height;
+    effectiveImgH = img.width;
+  }
+
+  // ソース画像のクロップ領域を決定
+  let srcX = 0;
+  let srcY = 0;
+  let srcW = effectiveImgW;
+  let srcH = effectiveImgH;
+
+  if (page.isSpread && !page.skipSplit && side !== 'single') {
+    const splitPx = Math.round(effectiveImgW * page.spineRatio);
+    if (side === 'left') {
+      srcX = 0;
+      srcW = splitPx;
+    } else {
+      srcX = splitPx;
+      srcW = effectiveImgW - splitPx;
     }
+  }
 
+  // アスペクト比を維持したセンタリング配置
+  const fit = fitAspectRatio(srcW, srcH, printableW, printableH);
+
+  // 回転を考慮した描画
+  ctx.save();
+  if (page.rotation !== 0) {
+    // 回転の中心を出力領域の中心に設定
+    const cx = marginLeft + printableW / 2;
+    const cy = marginTop + printableH / 2;
+    ctx.translate(cx, cy);
+    ctx.rotate((page.rotation * Math.PI) / 180);
+    ctx.translate(-cx, -cy);
+    
+    // 回転後のソース矩形を元画像座標系で計算
+    if (page.rotation === 90 || page.rotation === 270) {
+      // 元画像のW/Hは回転前の値を使う
+      const origSplitPx = page.isSpread && !page.skipSplit
+        ? Math.round(img.width * page.spineRatio)
+        : 0;
+      if (side === 'left' && page.isSpread && !page.skipSplit) {
+        ctx.drawImage(img, 0, 0, origSplitPx, img.height, 
+          marginLeft + fit.x, marginTop + fit.y, fit.w, fit.h);
+      } else if (side === 'right' && page.isSpread && !page.skipSplit) {
+        ctx.drawImage(img, origSplitPx, 0, img.width - origSplitPx, img.height,
+          marginLeft + fit.x, marginTop + fit.y, fit.w, fit.h);
+      } else {
+        ctx.drawImage(img, 0, 0, img.width, img.height,
+          marginLeft + fit.x, marginTop + fit.y, fit.w, fit.h);
+      }
+    } else {
+      // 180度回転
+      ctx.drawImage(img, srcX, srcY, srcW, srcH,
+        marginLeft + fit.x, marginTop + fit.y, fit.w, fit.h);
+    }
+  } else {
+    // 回転なし: 通常描画
+    ctx.drawImage(img, srcX, srcY, srcW, srcH,
+      marginLeft + fit.x, marginTop + fit.y, fit.w, fit.h);
+  }
+  ctx.restore();
+
+  // ノド影グラデーション消去
+  if (!accordionMode) {
+    if (side === 'left' && page.gutterMaskRightMm > 0) {
+      const maskW = mmToPx(page.gutterMaskRightMm, scale);
+      const grad = ctx.createLinearGradient(
+        marginLeft + fit.x + fit.w - maskW, 0,
+        marginLeft + fit.x + fit.w, 0
+      );
+      grad.addColorStop(0, 'rgba(255,255,255,0)');
+      grad.addColorStop(1, 'rgba(255,255,255,1)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(marginLeft + fit.x + fit.w - maskW, marginTop + fit.y, maskW, fit.h);
+    }
+    if (side === 'right' && page.gutterMaskLeftMm > 0) {
+      const maskW = mmToPx(page.gutterMaskLeftMm, scale);
+      const grad = ctx.createLinearGradient(
+        marginLeft + fit.x, 0,
+        marginLeft + fit.x + maskW, 0
+      );
+      grad.addColorStop(0, 'rgba(255,255,255,1)');
+      grad.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(marginLeft + fit.x, marginTop + fit.y, maskW, fit.h);
+    }
+  }
+
+  // ホワイト修正テープ（WhiteoutRect）の適用
+  if (page.whiteoutRects.length > 0) {
+    ctx.fillStyle = '#ffffff';
+    // WhiteoutRectの座標はフィット後の描画領域にマッピング
+    const scaleX = fit.w / srcW;
+    const scaleY = fit.h / srcH;
+    for (const rect of page.whiteoutRects) {
+      const rx = marginLeft + fit.x + (rect.x - srcX) * scaleX;
+      const ry = marginTop + fit.y + (rect.y - srcY) * scaleY;
+      const rw = rect.w * scaleX;
+      const rh = rect.h * scaleY;
+      ctx.fillRect(rx, ry, rw, rh);
+    }
+  }
+
+  // 傾き補正のrestore
+  if (page.deskew) {
+    ctx.restore();
+  }
+
+  return canvas;
+};
+
+/** 画像ロードのPromiseラッパー */
+const loadImage = (src: string): Promise<HTMLImageElement> =>
+  new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = 'Anonymous';
-    img.onload = () => {
-      if (page.isLandscape && side !== 'single') {
-        // Split landscape
-        const splitX = img.width * (page.spineGuide / 100);
-        if (side === 'left') {
-          // Draw left half
-          ctx.drawImage(img, 0, 0, splitX, img.height, 0, 0, widthPx, heightPx);
-        } else {
-          // Draw right half
-          ctx.drawImage(img, splitX, 0, img.width - splitX, img.height, 0, 0, widthPx, heightPx);
-        }
-      } else {
-        // Single page
-        ctx.drawImage(img, 0, 0, widthPx, heightPx);
-      }
-
-      // Gutter shadow mask (white gradient)
-      if (side === 'left' && page.rightMaskOffset > 0) {
-        const maskWidth = mmToPx(page.rightMaskOffset, scale);
-        const grad = ctx.createLinearGradient(widthPx - maskWidth, 0, widthPx, 0);
-        grad.addColorStop(0, 'rgba(255,255,255,0)');
-        grad.addColorStop(1, 'rgba(255,255,255,1)');
-        ctx.fillStyle = grad;
-        ctx.fillRect(widthPx - maskWidth, 0, maskWidth, heightPx);
-      } else if (side === 'right' && page.leftMaskOffset > 0) {
-        const maskWidth = mmToPx(page.leftMaskOffset, scale);
-        const grad = ctx.createLinearGradient(0, 0, maskWidth, 0);
-        grad.addColorStop(0, 'rgba(255,255,255,1)');
-        grad.addColorStop(1, 'rgba(255,255,255,0)');
-        ctx.fillStyle = grad;
-        ctx.fillRect(0, 0, maskWidth, heightPx);
-      }
-
-      resolve(canvas);
-    };
-    img.onerror = reject;
-    img.src = page.imageUrl;
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('画像の読み込みに失敗'));
+    img.src = src;
   });
+
+/**
+ * 2点クリックから傾き角度を算出する（水平補正用）
+ * θ = atan2(Δy, Δx)
+ */
+export const calcDeskewAngle = (
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number
+): { angleRad: number; angleDeg: number } => {
+  const angleRad = Math.atan2(y2 - y1, x2 - x1);
+  const angleDeg = (angleRad * 180) / Math.PI;
+  return { angleRad, angleDeg };
 };

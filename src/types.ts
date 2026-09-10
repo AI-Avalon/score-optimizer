@@ -1,30 +1,126 @@
-export type Mask = { x: number; y: number; w: number; h: number };
-export type Stamp = { text: string; x: number; y: number; size: number };
-
-export type Page = {
+/** 矩形マスク（ホワイト修正テープ用） */
+export type WhiteoutRect = {
+  /** 一意識別子 */
   id: string;
-  imageUrl: string | null;
-  width: number;
-  height: number;
-  isLandscape: boolean;
-  leftMaskOffset: number; // 0-30mm
-  rightMaskOffset: number; // 0-30mm
-  spineGuide: number; // Percentage 0-100% for splitting landscape
-  whiteoutMasks: Mask[];
-  stamps: Stamp[];
+  /** 元画像上のX座標（px） */
+  x: number;
+  /** 元画像上のY座標（px） */
+  y: number;
+  /** 幅（px） */
+  w: number;
+  /** 高さ（px） */
+  h: number;
 };
 
-export type Preset = {
-  name: string;
+/** スタンプオーバーレイ（パート名・ページ番号・リハーサル記号） */
+export type StampOverlay = {
+  id: string;
+  text: string;
+  /** 用紙上のX位置（mm） */
+  xMm: number;
+  /** 用紙上のY位置（mm） */
+  yMm: number;
+  /** フォントサイズ（pt） */
+  sizePt: number;
+};
+
+/** 傾き補正データ */
+export type DeskewData = {
+  /** 補正角度（ラジアン） */
+  angleRad: number;
+  /** 補正角度（度） */
+  angleDeg: number;
+};
+
+/** 1ページ分のデータモデル */
+export type ScorePage = {
+  /** 一意識別子 */
+  id: string;
+  /** 元画像のdata URL（300DPIレンダリング済み） */
+  imageUrl: string | null;
+  /** 元画像の幅（px） */
+  originalWidth: number;
+  /** 元画像の高さ（px） */
+  originalHeight: number;
+  /** 見開きスキャンか（trueなら分割対象） */
+  isSpread: boolean;
+  /** 見開き分割を行わずスキップするか（表紙・単ページ用） */
+  skipSplit: boolean;
+  /** 白紙ページか */
+  isBlank: boolean;
+  /** ノド影マスク左側幅（mm, 0-30） */
+  gutterMaskLeftMm: number;
+  /** ノド影マスク右側幅（mm, 0-30） */
+  gutterMaskRightMm: number;
+  /** 見開き分割位置（元画像幅に対する割合 0.0-1.0） */
+  spineRatio: number;
+  /** ホワイト修正テープ矩形リスト */
+  whiteoutRects: WhiteoutRect[];
+  /** スタンプオーバーレイリスト */
+  stamps: StampOverlay[];
+  /** 傾き補正データ（null=補正なし） */
+  deskew: DeskewData | null;
+  /** 回転角度（0, 90, 180, 270） */
+  rotation: 0 | 90 | 180 | 270;
+};
+
+/** 用紙プリセット */
+export type PaperPreset = {
+  /** 表示名 */
+  label: string;
+  /** 幅（mm） */
   widthMm: number;
+  /** 高さ（mm） */
   heightMm: number;
 };
 
-export const PRESETS: Preset[] = [
-  { name: 'A4 Portrait', widthMm: 210, heightMm: 297 },
-  { name: 'B4 Portrait (Orchestra)', widthMm: 250, heightMm: 353 },
-  { name: 'A3 Landscape', widthMm: 420, heightMm: 297 },
-  { name: 'A3 Portrait', widthMm: 297, heightMm: 420 },
-  { name: '菊倍判 (218x304mm)', widthMm: 218, heightMm: 304 },
-  { name: 'US Letter', widthMm: 215.9, heightMm: 279.4 },
+/** 定義済み用紙プリセット一覧 */
+export const PAPER_PRESETS: PaperPreset[] = [
+  { label: 'A4 縦 (210×297mm)', widthMm: 210, heightMm: 297 },
+  { label: 'B4 縦 (257×364mm) オケ標準', widthMm: 257, heightMm: 364 },
+  { label: 'A3 横 (420×297mm) 見開き', widthMm: 420, heightMm: 297 },
+  { label: 'A3 縦 (297×420mm)', widthMm: 297, heightMm: 420 },
+  { label: '菊倍判 (218×304mm)', widthMm: 218, heightMm: 304 },
+  { label: 'US Letter (215.9×279.4mm)', widthMm: 215.9, heightMm: 279.4 },
 ];
+
+/** ビューモード */
+export type ViewMode = 'edit' | 'paper' | 'booklet';
+
+/** エクスポート設定 */
+export type ExportConfig = {
+  /** ファイル名パターン: 'original' | 'suffix' | 'date' | 'custom' */
+  filenameMode: 'original' | 'suffix' | 'date' | 'custom';
+  /** カスタムファイル名 */
+  customFilename: string;
+  /** 元ファイル名（インポート時に記録） */
+  originalFilename: string;
+  /** サフィックス文字列 */
+  suffix: string;
+  /** ページ番号再付与: 開始番号（0=無効） */
+  pageNumberStart: number;
+  /** ページ番号フォントサイズ（pt） */
+  pageNumberSizePt: number;
+  /** ページ番号位置: 'top' | 'bottom' */
+  pageNumberPosition: 'top' | 'bottom';
+};
+
+/** マージン設定（mm） */
+export type MarginConfig = {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+};
+
+/** 全体設定 */
+export type GlobalConfig = {
+  /** 蛇腹製本モード（ノド余白シフト無効化） */
+  accordionBindingMode: boolean;
+  /** 大域スケール統一モード */
+  globalStaffScaleLock: boolean;
+  /** 基準ページインデックス（globalStaffScaleLock時） */
+  referencePageIndex: number;
+  /** マージン設定 */
+  margins: MarginConfig;
+};

@@ -1,27 +1,228 @@
 import { create } from 'zustand';
-import type { Page, Preset } from './types';
-import { PRESETS } from './types';
+import type {
+  ScorePage,
+  PaperPreset,
+  ViewMode,
+  ExportConfig,
+  GlobalConfig,
+} from './types';
+import { PAPER_PRESETS } from './types';
 
-interface StoreState {
-  pages: Page[];
-  selectedPreset: Preset;
-  isMobile: boolean;
-  addPage: (page: Page) => void;
-  updatePage: (id: string, partial: Partial<Page>) => void;
-  removePage: (id: string) => void;
-  setSelectedPreset: (preset: Preset) => void;
-  setIsMobile: (isMobile: boolean) => void;
+/** Undo/Redo用の履歴エントリ */
+interface HistoryEntry {
+  pages: ScorePage[];
 }
 
-export const useStore = create<StoreState>((set) => ({
+/** ストア全体の型定義 */
+interface StoreState {
+  /** ページ一覧 */
+  pages: ScorePage[];
+  /** 選択中のページID */
+  selectedPageId: string | null;
+  /** 用紙プリセット */
+  paperPreset: PaperPreset;
+  /** モバイル判定 */
+  isMobile: boolean;
+  /** ビューモード */
+  viewMode: ViewMode;
+  /** エクスポート設定 */
+  exportConfig: ExportConfig;
+  /** グローバル設定 */
+  globalConfig: GlobalConfig;
+  /** Undo履歴 */
+  undoStack: HistoryEntry[];
+  /** Redo履歴 */
+  redoStack: HistoryEntry[];
+  /** 処理中フラグ */
+  isProcessing: boolean;
+  /** 処理進捗（0-100） */
+  progress: number;
+
+  // --- Actions ---
+  /** ページを末尾に追加 */
+  addPage: (page: ScorePage) => void;
+  /** 複数ページを末尾に追加 */
+  addPages: (pages: ScorePage[]) => void;
+  /** ページを更新 */
+  updatePage: (id: string, partial: Partial<ScorePage>) => void;
+  /** ページを削除 */
+  removePage: (id: string) => void;
+  /** ページ順序を入れ替え */
+  movePage: (fromIndex: number, toIndex: number) => void;
+  /** 指定位置に白紙ページを挿入 */
+  insertBlankPage: (atIndex: number) => void;
+  /** ページを選択 */
+  selectPage: (id: string | null) => void;
+  /** 用紙プリセットを変更 */
+  setPaperPreset: (preset: PaperPreset) => void;
+  /** モバイル判定を更新 */
+  setIsMobile: (v: boolean) => void;
+  /** ビューモードを変更 */
+  setViewMode: (mode: ViewMode) => void;
+  /** エクスポート設定を更新 */
+  setExportConfig: (partial: Partial<ExportConfig>) => void;
+  /** グローバル設定を更新 */
+  setGlobalConfig: (partial: Partial<GlobalConfig>) => void;
+  /** 処理状態を更新 */
+  setProcessing: (isProcessing: boolean, progress?: number) => void;
+  /** Undo */
+  undo: () => void;
+  /** Redo */
+  redo: () => void;
+  /** 現在のページ状態を履歴にプッシュ */
+  pushHistory: () => void;
+}
+
+/** 一意IDを生成 */
+const genId = (): string => {
+  const arr = new Uint8Array(8);
+  crypto.getRandomValues(arr);
+  return Array.from(arr, b => b.toString(16).padStart(2, '0')).join('');
+};
+
+/** 白紙ページを生成 */
+const createBlankPage = (): ScorePage => ({
+  id: genId(),
+  imageUrl: null,
+  originalWidth: 0,
+  originalHeight: 0,
+  isSpread: false,
+  skipSplit: true,
+  isBlank: true,
+  gutterMaskLeftMm: 0,
+  gutterMaskRightMm: 0,
+  spineRatio: 0.5,
+  whiteoutRects: [],
+  stamps: [],
+  deskew: null,
+  rotation: 0,
+});
+
+export { genId, createBlankPage };
+
+export const useStore = create<StoreState>((set, get) => ({
   pages: [],
-  selectedPreset: PRESETS[1], // B4 Portrait default
-  isMobile: typeof window !== 'undefined' ? window.innerWidth <= 768 : false,
-  addPage: (page) => set((state) => ({ pages: [...state.pages, page] })),
-  updatePage: (id, partial) => set((state) => ({
-    pages: state.pages.map(p => p.id === id ? { ...p, ...partial } : p)
-  })),
-  removePage: (id) => set((state) => ({ pages: state.pages.filter(p => p.id !== id) })),
-  setSelectedPreset: (preset) => set({ selectedPreset: preset }),
-  setIsMobile: (isMobile) => set({ isMobile }),
+  selectedPageId: null,
+  paperPreset: PAPER_PRESETS[0],
+  isMobile: typeof window !== 'undefined' ? window.innerWidth < 768 : false,
+  viewMode: 'edit',
+  exportConfig: {
+    filenameMode: 'original',
+    customFilename: 'score-optimized',
+    originalFilename: '',
+    suffix: '_A4',
+    pageNumberStart: 0,
+    pageNumberSizePt: 10,
+    pageNumberPosition: 'bottom',
+  },
+  globalConfig: {
+    accordionBindingMode: false,
+    globalStaffScaleLock: false,
+    referencePageIndex: 0,
+    margins: { top: 5, bottom: 5, left: 5, right: 5 },
+  },
+  undoStack: [],
+  redoStack: [],
+  isProcessing: false,
+  progress: 0,
+
+  addPage: (page) => {
+    const state = get();
+    state.pushHistory();
+    set({ pages: [...state.pages, page], selectedPageId: page.id });
+  },
+
+  addPages: (newPages) => {
+    const state = get();
+    state.pushHistory();
+    set({
+      pages: [...state.pages, ...newPages],
+      selectedPageId: newPages.length > 0 ? newPages[0].id : state.selectedPageId,
+    });
+  },
+
+  updatePage: (id, partial) => {
+    const state = get();
+    state.pushHistory();
+    set({
+      pages: state.pages.map(p => (p.id === id ? { ...p, ...partial } : p)),
+    });
+  },
+
+  removePage: (id) => {
+    const state = get();
+    state.pushHistory();
+    const filtered = state.pages.filter(p => p.id !== id);
+    set({
+      pages: filtered,
+      selectedPageId: state.selectedPageId === id
+        ? (filtered.length > 0 ? filtered[0].id : null)
+        : state.selectedPageId,
+    });
+  },
+
+  movePage: (fromIndex, toIndex) => {
+    const state = get();
+    state.pushHistory();
+    const arr = [...state.pages];
+    const [moved] = arr.splice(fromIndex, 1);
+    arr.splice(toIndex, 0, moved);
+    set({ pages: arr });
+  },
+
+  insertBlankPage: (atIndex) => {
+    const state = get();
+    state.pushHistory();
+    const arr = [...state.pages];
+    const blank = createBlankPage();
+    arr.splice(atIndex, 0, blank);
+    set({ pages: arr, selectedPageId: blank.id });
+  },
+
+  selectPage: (id) => set({ selectedPageId: id }),
+
+  setPaperPreset: (preset) => set({ paperPreset: preset }),
+
+  setIsMobile: (v) => set({ isMobile: v }),
+
+  setViewMode: (mode) => set({ viewMode: mode }),
+
+  setExportConfig: (partial) =>
+    set((state) => ({ exportConfig: { ...state.exportConfig, ...partial } })),
+
+  setGlobalConfig: (partial) =>
+    set((state) => ({ globalConfig: { ...state.globalConfig, ...partial } })),
+
+  setProcessing: (isProcessing, progress) =>
+    set({ isProcessing, progress: progress ?? (isProcessing ? 0 : 100) }),
+
+  undo: () => {
+    const { undoStack, pages } = get();
+    if (undoStack.length === 0) return;
+    const prev = undoStack[undoStack.length - 1];
+    set((state) => ({
+      undoStack: state.undoStack.slice(0, -1),
+      redoStack: [...state.redoStack, { pages }],
+      pages: prev.pages,
+    }));
+  },
+
+  redo: () => {
+    const { redoStack, pages } = get();
+    if (redoStack.length === 0) return;
+    const next = redoStack[redoStack.length - 1];
+    set((state) => ({
+      redoStack: state.redoStack.slice(0, -1),
+      undoStack: [...state.undoStack, { pages }],
+      pages: next.pages,
+    }));
+  },
+
+  pushHistory: () => {
+    const { pages, undoStack } = get();
+    const MAX_HISTORY = 30;
+    const newStack = [...undoStack, { pages }];
+    if (newStack.length > MAX_HISTORY) newStack.shift();
+    set({ undoStack: newStack, redoStack: [] });
+  },
 }));
