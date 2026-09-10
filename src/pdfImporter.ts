@@ -7,6 +7,8 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   import.meta.url
 ).toString();
 
+let activeRenderTask: any = null;
+
 export const importPdf = async (
   file: File,
   onProgress?: (progress: number) => void
@@ -46,7 +48,26 @@ export const importPdf = async (
     canvas.width = viewport.width;
     canvas.height = viewport.height;
     
-    await page.render({ canvasContext: ctx, viewport }).promise;
+    if (activeRenderTask) {
+      try {
+        activeRenderTask.cancel();
+      } catch (e) {
+        // ignore
+      }
+    }
+    
+    activeRenderTask = page.render({ canvasContext: ctx, viewport });
+    try {
+      await activeRenderTask.promise;
+    } catch (e: any) {
+      if (e?.name === 'RenderingCancelledException') {
+        console.log('PDF rendering cancelled');
+        continue;
+      }
+      throw e;
+    } finally {
+      activeRenderTask = null;
+    }
     
     pages.push({
       id: genId(),

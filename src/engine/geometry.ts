@@ -88,10 +88,10 @@ export const computeCropRect = (
   const topTrim = Math.floor(cropH * (settings.manualTrimTopPercent / 100.0));
   const bottomTrim = Math.floor(cropH * (settings.manualTrimBottomPercent / 100.0));
 
-  x0 = Math.min(Math.max(0, x0 + leftTrim), width - 1);
-  x1 = Math.max(Math.min(width, x1 - rightTrim), x0 + 1);
-  y0 = Math.min(Math.max(0, y0 + topTrim), height - 1);
-  y1 = Math.max(Math.min(height, y1 - bottomTrim), y0 + 1);
+  let finalX0 = Math.max(0, Math.min(width - 1, x0 + leftTrim));
+  let finalX1 = Math.max(finalX0 + 1, Math.min(width, x1 - rightTrim));
+  let finalY0 = Math.max(0, Math.min(height - 1, y0 + topTrim));
+  let finalY1 = Math.max(finalY0 + 1, Math.min(height, y1 - bottomTrim));
 
-  return { x0, y0, x1, y1 };
+  return { x0: finalX0, y0: finalY0, x1: finalX1, y1: finalY1 };
 };

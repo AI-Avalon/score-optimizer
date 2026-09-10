@@ -99,11 +99,14 @@ export const App = () => {
     const file = e.dataTransfer.files?.[0];
     if (file && (file.type === 'application/pdf' || file.type.startsWith('image/'))) {
       setProcessing(true, 0);
-      setExportConfig({ originalFilename: file.name });
-      const { importPdf } = await import('./pdfImporter');
-      const newPages = await importPdf(file, (p) => setProcessing(true, p));
-      addPages(newPages);
-      setProcessing(false);
+      try {
+        setExportConfig({ originalFilename: file.name });
+        const { importPdf } = await import('./pdfImporter');
+        const newPages = await importPdf(file, (p) => setProcessing(true, p));
+        addPages(newPages);
+      } finally {
+        setProcessing(false);
+      }
     }
   }, [addPages, setProcessing, setExportConfig]);
 

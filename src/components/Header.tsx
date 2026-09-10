@@ -11,12 +11,15 @@ export const Header = () => {
     const file = e.target.files?.[0];
     if (!file) return;
     setProcessing(true, 0);
-    setExportConfig({ originalFilename: file.name });
-    const { importPdf } = await import('../pdfImporter');
-    const newPages = await importPdf(file, (p) => setProcessing(true, p));
-    addPages(newPages);
-    setProcessing(false);
-    if (fileInputRef.current) fileInputRef.current.value = '';
+    try {
+      setExportConfig({ originalFilename: file.name });
+      const { importPdf } = await import('../pdfImporter');
+      const newPages = await importPdf(file, (p) => setProcessing(true, p));
+      addPages(newPages);
+    } finally {
+      setProcessing(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
   };
 
   return (

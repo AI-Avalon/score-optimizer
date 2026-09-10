@@ -13,89 +13,127 @@ export const CanvasViewer = () => {
   const [scale, setScale] = useState<number | 'fit'>('fit');
   const [activeTool, setActiveTool] = useState<'pan' | 'crop' | 'deskew'>('pan');
   
-  
-  
+  const [previewImage, setPreviewImage] = useState<{ canvas: HTMLCanvasElement; origW: number; origH: number } | null>(null);
 
+  // 1. Generate lightweight preview asynchronously
   useEffect(() => {
-    if (!selectedPage?.imageUrl || !canvasRef.current || !containerRef.current) return;
-    
+    if (!selectedPage?.imageUrl) return;
+    let isCancelled = false;
     const img = new Image();
-    img.onload = () => {
-      const ctx = canvasRef.current!.getContext('2d');
-      if (!ctx) return;
-      
-      const cw = containerRef.current!.clientWidth;
-      const ch = containerRef.current!.clientHeight;
-      
-      let drawScale = 1;
-      if (scale === 'fit') {
-        drawScale = Math.min((cw - 40) / img.width, (ch - 40) / img.height);
-      } else {
-        drawScale = scale;
+    img.onload = async () => {
+      if (isCancelled) return;
+      const MAX_DIM = 1200;
+      let origW = img.width;
+      let origH = img.height;
+      let w = origW;
+      let h = origH;
+      if (w > MAX_DIM || h > MAX_DIM) {
+        const s = Math.min(MAX_DIM / w, MAX_DIM / h);
+        w = Math.floor(w * s);
+        h = Math.floor(h * s);
       }
       
-      const w = img.width * drawScale;
-      const h = img.height * drawScale;
-      canvasRef.current!.width = w;
-      canvasRef.current!.height = h;
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      const ctx = c.getContext('2d')!;
+      ctx.drawImage(img, 0, 0, w, h);
+      
+      await new Promise(r => setTimeout(r, 0)); // Yield to main thread
+      if (isCancelled) return;
 
-      ctx.save();
-      // Simple rotation
-      ctx.translate(w / 2, h / 2);
-      ctx.rotate((selectedPage.rotation * Math.PI) / 180);
-      ctx.drawImage(img, -w / 2, -h / 2, w, h);
-      ctx.restore();
-
-      // Draw crop rect
       const settings = selectedPage.overrideSettings ? { ...globalConfig.processSettings, ...selectedPage.overrideSettings } : globalConfig.processSettings;
-      const crop = computeCropRect(img.width, img.height, settings);
-      
-      ctx.strokeStyle = '#00ff00';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(crop.x0 * drawScale, crop.y0 * drawScale, (crop.x1 - crop.x0) * drawScale, (crop.y1 - crop.y0) * drawScale);
-      
-      // 暗転マスク
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
-      ctx.fillRect(0, 0, w, crop.y0 * drawScale); // Top
-      ctx.fillRect(0, crop.y1 * drawScale, w, h - crop.y1 * drawScale); // Bottom
-      ctx.fillRect(0, crop.y0 * drawScale, crop.x0 * drawScale, (crop.y1 - crop.y0) * drawScale); // Left
-      ctx.fillRect(crop.x1 * drawScale, crop.y0 * drawScale, w - crop.x1 * drawScale, (crop.y1 - crop.y0) * drawScale); // Right
-
-      // 8点ハンドル
-      if (activeTool === 'crop') {
-        const hSize = 8;
-        ctx.fillStyle = '#ffffff';
-        ctx.strokeStyle = '#000000';
-        ctx.lineWidth = 1;
-        const cx0 = crop.x0 * drawScale; const cx1 = crop.x1 * drawScale;
-        const cy0 = crop.y0 * drawScale; const cy1 = crop.y1 * drawScale;
-        const pts = [
-          [cx0, cy0], [cx0 + (cx1 - cx0) / 2, cy0], [cx1, cy0],
-          [cx0, cy0 + (cy1 - cy0) / 2],             [cx1, cy0 + (cy1 - cy0) / 2],
-          [cx0, cy1], [cx0 + (cx1 - cx0) / 2, cy1], [cx1, cy1]
-        ];
-        pts.forEach(([px, py]) => {
-          ctx.fillRect(px - hSize/2, py - hSize/2, hSize, hSize);
-          ctx.strokeRect(px - hSize/2, py - hSize/2, hSize, hSize);
-        });
+      if (settings.outputColorMode !== 'original') {
+        const { applyColorMode } = await import('../../engine/filterEngine');
+        const processed = applyColorMode(ctx, w, h, settings);
+        ctx.putImageData(processed, 0, 0);
       }
 
-      // Draw split line if spread
-      if (settings.pageProcessingMode === 'spread_split') {
-        const cropW = crop.x1 - crop.x0;
-        const offsetPx = (settings.splitOffsetPercent / 100.0) * cropW;
-        const splitX = crop.x0 + Math.max(1, Math.min(cropW - 1, (cropW / 2) + offsetPx));
-
-        ctx.strokeStyle = '#ff7b00';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(splitX * drawScale, crop.y0 * drawScale);
-        ctx.lineTo(splitX * drawScale, crop.y1 * drawScale);
-        ctx.stroke();
+      if (!isCancelled) {
+        setPreviewImage({ canvas: c, origW, origH });
       }
     };
     img.src = selectedPage.imageUrl;
-  }, [selectedPage, scale, globalConfig]);
+    return () => { isCancelled = true; };
+  }, [selectedPage?.imageUrl, selectedPage?.overrideSettings, globalConfig.processSettings]);
+
+  // 2. Draw to main canvas
+  useEffect(() => {
+    if (!previewImage || !canvasRef.current || !containerRef.current) return;
+    
+    const { canvas: prevC, origW, origH } = previewImage;
+    const ctx = canvasRef.current.getContext('2d');
+    if (!ctx) return;
+    
+    const cw = containerRef.current.clientWidth;
+    const ch = containerRef.current.clientHeight;
+    
+    let drawScale = 1;
+    if (scale === 'fit') {
+      drawScale = Math.min((cw - 40) / origW, (ch - 40) / origH);
+    } else {
+      drawScale = scale;
+    }
+    
+    const w = origW * drawScale;
+    const h = origH * drawScale;
+    canvasRef.current.width = w;
+    canvasRef.current.height = h;
+
+    ctx.save();
+    // Rotation
+    ctx.translate(w / 2, h / 2);
+    ctx.rotate((selectedPage!.rotation * Math.PI) / 180);
+    ctx.drawImage(prevC, -w / 2, -h / 2, w, h);
+    ctx.restore();
+
+    // Draw crop rect
+    const settings = selectedPage!.overrideSettings ? { ...globalConfig.processSettings, ...selectedPage!.overrideSettings } : globalConfig.processSettings;
+    const crop = computeCropRect(origW, origH, settings);
+    
+    ctx.strokeStyle = '#00ff00';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(crop.x0 * drawScale, crop.y0 * drawScale, (crop.x1 - crop.x0) * drawScale, (crop.y1 - crop.y0) * drawScale);
+    
+    // 暗転マスク
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
+    ctx.fillRect(0, 0, w, crop.y0 * drawScale); // Top
+    ctx.fillRect(0, crop.y1 * drawScale, w, h - crop.y1 * drawScale); // Bottom
+    ctx.fillRect(0, crop.y0 * drawScale, crop.x0 * drawScale, (crop.y1 - crop.y0) * drawScale); // Left
+    ctx.fillRect(crop.x1 * drawScale, crop.y0 * drawScale, w - crop.x1 * drawScale, (crop.y1 - crop.y0) * drawScale); // Right
+
+    // 8点ハンドル
+    if (activeTool === 'crop') {
+      const hSize = 8;
+      ctx.fillStyle = '#ffffff';
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 1;
+      const cx0 = crop.x0 * drawScale; const cx1 = crop.x1 * drawScale;
+      const cy0 = crop.y0 * drawScale; const cy1 = crop.y1 * drawScale;
+      const pts = [
+        [cx0, cy0], [cx0 + (cx1 - cx0) / 2, cy0], [cx1, cy0],
+        [cx0, cy0 + (cy1 - cy0) / 2],             [cx1, cy0 + (cy1 - cy0) / 2],
+        [cx0, cy1], [cx0 + (cx1 - cx0) / 2, cy1], [cx1, cy1]
+      ];
+      pts.forEach(([px, py]) => {
+        ctx.fillRect(px - hSize/2, py - hSize/2, hSize, hSize);
+        ctx.strokeRect(px - hSize/2, py - hSize/2, hSize, hSize);
+      });
+    }
+
+    // Draw split line if spread
+    if (settings.pageProcessingMode === 'spread_split') {
+      const cropW = crop.x1 - crop.x0;
+      const offsetPx = (settings.splitOffsetPercent / 100.0) * cropW;
+      const splitX = crop.x0 + Math.max(1, Math.min(cropW - 1, (cropW / 2) + offsetPx));
+
+      ctx.strokeStyle = '#ff7b00';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(splitX * drawScale, crop.y0 * drawScale);
+      ctx.lineTo(splitX * drawScale, crop.y1 * drawScale);
+      ctx.stroke();
+    }
+  }, [selectedPage, scale, globalConfig, previewImage, activeTool]);
 
   if (!selectedPage) {
     return <div className="flex-1 bg-[#1e1e1e] flex items-center justify-center text-gray-500">No Page Selected</div>;

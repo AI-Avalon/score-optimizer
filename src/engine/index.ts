@@ -107,21 +107,24 @@ export const processPageImage = async (
 
   // Spread Split
   const offsetPx = Math.floor((settings.splitOffsetPercent / 100.0) * cropW);
+  // splitX is relative to the cropped image
+  // To avoid 0 width canvases, clamp splitX between 1 and cropW - 1
   const splitX = Math.max(1, Math.min(cropW - 1, Math.floor(cropW / 2) + offsetPx));
 
-  
+  const leftCanvasW = Math.max(1, splitX);
+  const rightCanvasW = Math.max(1, cropW - splitX);
 
   const outLeft = document.createElement('canvas');
-  outLeft.width = splitX;
+  outLeft.width = leftCanvasW;
   outLeft.height = cropH;
   const ctxL = outLeft.getContext('2d')!;
-  ctxL.putImageData(processedData, 0, 0, 0, 0, splitX, cropH);
+  ctxL.putImageData(processedData, 0, 0, 0, 0, leftCanvasW, cropH);
 
   const outRight = document.createElement('canvas');
-  outRight.width = cropW - splitX;
+  outRight.width = rightCanvasW;
   outRight.height = cropH;
   const ctxR = outRight.getContext('2d')!;
-  ctxR.putImageData(processedData, -splitX, 0, splitX, 0, cropW - splitX, cropH);
+  ctxR.putImageData(processedData, -splitX, 0, splitX, 0, rightCanvasW, cropH);
 
   const lData = ctxL.getImageData(0, 0, outLeft.width, outLeft.height);
   const rData = ctxR.getImageData(0, 0, outRight.width, outRight.height);
