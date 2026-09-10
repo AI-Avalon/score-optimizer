@@ -16,6 +16,8 @@ export const CanvasPreview = ({ page, preset, side, previewScale = 0.2 }: Props)
     let active = true;
     let currentCanvas: HTMLCanvasElement | null = null;
     
+    const container = containerRef.current;
+    
     const load = async () => {
       try {
         const canvas = await renderPageToCanvas(page, preset, side, previewScale);
@@ -24,9 +26,9 @@ export const CanvasPreview = ({ page, preset, side, previewScale = 0.2 }: Props)
           canvas.height = 0;
           return;
         }
-        if (containerRef.current) {
-          containerRef.current.innerHTML = '';
-          containerRef.current.appendChild(canvas);
+        if (container) {
+          container.innerHTML = '';
+          container.appendChild(canvas);
           currentCanvas = canvas;
         }
       } catch (err) {
@@ -40,8 +42,8 @@ export const CanvasPreview = ({ page, preset, side, previewScale = 0.2 }: Props)
         currentCanvas.width = 0;
         currentCanvas.height = 0;
       }
-      if (containerRef.current) {
-        containerRef.current.innerHTML = '';
+      if (container) {
+        container.innerHTML = '';
       }
     };
   }, [page, preset, side, previewScale]);
