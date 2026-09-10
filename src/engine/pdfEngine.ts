@@ -1,113 +1,71 @@
-// @ts-nocheck
-import { PDFDocument } from 'pdf-lib';
-import type { ExportConfig, GlobalConfig, PaperPreset, ScorePage } from '../types';
-import { processPageImage } from './index';
+import * as pdfjsLib from 'pdfjs-dist';
+import type { PageData } from './types';
 
-export const resolveFilename = (config: ExportConfig, preset: PaperPreset): string => {
-  const base = config.originalFilename.replace(/\.[^/.]+$/, "");
-  switch (config.filenameMode) {
-    case 'original':
-      return `${base}_optimized.pdf`;
-    case 'suffix':
-      return `${base}${config.suffix}.pdf`;
-    case 'date': {
-      const d = new Date();
-      const ds = `${d.getFullYear()}${(d.getMonth() + 1).toString().padStart(2, '0')}${d.getDate().toString().padStart(2, '0')}`;
-      return `${base}_${ds}.pdf`;
-    }
-    case 'custom':
-      return `${config.customFilename}.pdf`;
-    default:
-      return 'score_optimized.pdf';
-  }
-};
+// Set worker
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-export const exportToPdfPdfLib = async (
-  pages: ScorePage[],
-  /* preset: PaperPreset */ 
-  exportConfig: ExportConfig,
-  globalConfig: GlobalConfig,
-  onProgress: (progress: number) => void
-): Promise<void> => {
-  const pdfDoc = await PDFDocument.create();
+let currentRequestId = 0;
+
+export async function importPdf(file: File, onProgress: (progress: number) => void): Promise<{pages: PageData[], cancelled: boolean}> {
+  const reqId = ++currentRequestId;
+  const arrayBuffer = await file.arrayBuffer();
   
-  const pageW = preset.widthMm * (72 / 25.4);
-  const pageH = preset.heightMm * (72 / 25.4);
-  const outputDpi = 300;
-  const targetW = Math.max(1000, Math.floor((preset.widthMm / 25.4) * outputDpi));
-  const targetH = Math.max(1000, Math.floor((preset.heightMm / 25.4) * outputDpi));
+  if (reqId !== currentRequestId) return {pages: [], cancelled: true};
+  
+  const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+  let pdf: pdfjsLib.PDFDocumentProxy;
+  try {
+    pdf = await loadingTask.promise;
+  } catch (err: any) {
+    if (err?.name === 'RenderingCancelledException') {
+      return {pages: [], cancelled: true};
+    }
+    throw err;
+  }
 
-  let totalGenerated = 0;
+  const pages: PageData[] = [];
+  const numPages = pdf.numPages;
 
-  for (let i = 0; i < pages.length; i++) {
-    const p = pages[i];
-    const imageDatas = await processPageImage(p, i, globalConfig);
-
-    for (const data of imageDatas) {
-      const canvas = document.createElement('canvas');
-      canvas.width = targetW;
-      canvas.height = targetH;
-      const ctx = canvas.getContext('2d')!;
-      
-      // Fill white background
-      ctx.fillStyle = 'white';
-      ctx.fillRect(0, 0, targetW, targetH);
-
-      // Fit aspect ratio
-      const imgC = document.createElement('canvas');
-      imgC.width = data.width;
-      imgC.height = data.height;
-      imgC.getContext('2d')!.putImageData(data, 0, 0);
-
-      const srcAspect = data.width / data.height;
-      const dstAspect = targetW / targetH;
-      let drawW, drawH;
-      if (srcAspect > dstAspect) {
-        drawW = targetW;
-        drawH = targetW / srcAspect;
-      } else {
-        drawH = targetH;
-        drawW = targetH * srcAspect;
+  for (let i = 1; i <= numPages; i++) {
+    if (reqId !== currentRequestId) {
+      loadingTask.destroy();
+      return {pages: [], cancelled: true};
+    }
+    const page = await pdf.getPage(i);
+    const viewport = page.getViewport({ scale: 1.5 }); // 108 DPI for preview
+    
+    const canvas = document.createElement('canvas');
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    const ctx = canvas.getContext('2d')!;
+    
+    const renderTask = page.render({ canvasContext: ctx, viewport });
+    try {
+      await renderTask.promise;
+    } catch (err: any) {
+      if (err?.name === 'RenderingCancelledException') {
+        loadingTask.destroy();
+        return {pages: [], cancelled: true};
       }
-
-      const x0 = (targetW - drawW) / 2;
-      const y0 = (targetH - drawH) / 2;
-      
-      // We don't apply margins because the app.py explicitly says:
-      // "初期マージンは必ず 0mm とし、用紙いっぱいに最大化配置すること（余計な5mm余白を入れない）。"
-      
-      ctx.drawImage(imgC, x0, y0, drawW, drawH);
-
-      const base64 = canvas.toDataURL('image/png').split(',')[1];
-      const imgBytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
-      
-      canvas.width = 0;
-      imgC.width = 0;
-
-      const pdfImage = await pdfDoc.embedPng(imgBytes);
-      const pdfPage = pdfDoc.addPage([pageW, pageH]);
-      pdfPage.drawImage(pdfImage, {
-        x: 0,
-        y: 0,
-        width: pageW,
-        height: pageH
-      });
-      totalGenerated++;
+      throw err;
     }
 
-    onProgress(Math.round(((i + 1) / pages.length) * 100));
+    if (reqId !== currentRequestId) {
+      loadingTask.destroy();
+      return {pages: [], cancelled: true};
+    }
+
+    pages.push({
+      id: `page-${Date.now()}-${i}`,
+      originalImage: canvas.toDataURL('image/png'),
+      width: canvas.width,
+      height: canvas.height
+    });
+    
+    onProgress(Math.round((i / numPages) * 100));
+    canvas.width = 0;
+    canvas.height = 0; // immediate memory release
   }
 
-  const pdfBytes = await pdfDoc.save();
-  const filename = resolveFilename(exportConfig, { widthMm: 0, heightMm: 0, label: '' });
-  
-  const blob = new Blob([pdfBytes as any], { type: 'application/pdf' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-};
+  return { pages, cancelled: false };
+}

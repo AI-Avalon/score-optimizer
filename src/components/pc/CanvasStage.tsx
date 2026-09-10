@@ -1,16 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
 import { useStore } from '../../store/useScoreStore';
-import { computeCropRect } from '../../engine/geometry';
+import { computeCropRect } from '../../engine/cropEngine';
+import { toGray } from '../../engine/filterEngine';
 
-export const CanvasViewer = () => {
-  const { pages, selectedPageId, globalConfig, updatePage, setGlobalConfig } = useStore();
-  const selectedPage = pages.find((p) => p.id === selectedPageId);
+export const CanvasStage = () => {
+  const { pages, selectedPageId, settings, pageOverrides, updateSettings } = useStore();
+  const selectedIndex = pages.findIndex(p => p.id === selectedPageId);
+  const selectedPage = pages[selectedIndex];
+  
+  const activeSettings = (selectedIndex !== -1 && pageOverrides[selectedIndex]) 
+    ? { ...settings, ...pageOverrides[selectedIndex] } 
+    : settings;
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const [scale, setScale] = useState<number | 'fit'>('fit');
-  const [activeTool, setActiveTool] = useState<'pan' | 'crop'>('crop');
+  const [activeTool] = useState<'pan' | 'crop'>('crop');
   
   const [previewImage, setPreviewImage] = useState<{ 
     canvas: HTMLCanvasElement; 
@@ -28,7 +34,7 @@ export const CanvasViewer = () => {
 
   // 1. Generate lightweight preview asynchronously
   useEffect(() => {
-    if (!selectedPage?.imageUrl) return;
+    if (!selectedPage?.originalImage) return;
     let isCancelled = false;
     const img = new Image();
     img.onload = async () => {
@@ -52,12 +58,12 @@ export const CanvasViewer = () => {
       await new Promise(r => setTimeout(r, 0)); // Yield to main thread
       if (isCancelled) return;
 
-      const settings = selectedPage.overrideSettings ? { ...globalConfig.processSettings, ...selectedPage.overrideSettings } : globalConfig.processSettings;
-      
       let detectedBBox = undefined;
-      if (settings.autoCropEnabled) {
-        const { detectContentBBox } = await import('../../engine/geometry');
-        const bbox = detectContentBBox(ctx, w, h, settings.blackMarginThreshold);
+      if (activeSettings.auto_crop_enabled) {
+        const { detectContentBbox } = await import('../../engine/cropEngine');
+        const imgData = ctx.getImageData(0, 0, w, h);
+        const gray = toGray(imgData);
+        const bbox = detectContentBbox(gray, w, h, activeSettings.black_margin_threshold, activeSettings.crop_padding_px);
         detectedBBox = {
           x0: bbox.x0 * (origW / w),
           y0: bbox.y0 * (origH / h),
@@ -66,9 +72,15 @@ export const CanvasViewer = () => {
         };
       }
 
-      if (settings.outputColorMode !== 'original') {
-        const { applyColorMode } = await import('../../engine/filterEngine');
-        const processed = applyColorMode(ctx, w, h, settings);
+      if (activeSettings.output_color_mode === 'monochrome') {
+        const { binarizeFixed, binarizeAdaptive } = await import('../../engine/filterEngine');
+        const imgData = ctx.getImageData(0, 0, w, h);
+        let processed;
+        if (activeSettings.use_adaptive_threshold) {
+           processed = binarizeAdaptive(imgData);
+        } else {
+           processed = binarizeFixed(imgData, activeSettings.fixed_threshold);
+        }
         ctx.putImageData(processed, 0, 0);
       }
 
@@ -76,9 +88,9 @@ export const CanvasViewer = () => {
         setPreviewImage({ canvas: c, origW, origH, detectedBBox });
       }
     };
-    img.src = selectedPage.imageUrl;
+    img.src = selectedPage.originalImage;
     return () => { isCancelled = true; };
-  }, [selectedPage?.imageUrl, selectedPage?.overrideSettings, globalConfig.processSettings]);
+  }, [selectedPage?.originalImage, activeSettings]);
 
   // 2. Draw to main canvas
   useEffect(() => {
@@ -109,15 +121,11 @@ export const CanvasViewer = () => {
     
     ctx.scale(dpr, dpr);
     ctx.save();
-    // Rotation
-    ctx.translate(w / 2, h / 2);
-    ctx.rotate((selectedPage!.rotation * Math.PI) / 180);
-    ctx.drawImage(prevC, -w / 2, -h / 2, w, h);
+    ctx.drawImage(prevC, 0, 0, w, h);
     ctx.restore();
 
     // Draw crop rect
-    const settings = selectedPage!.overrideSettings ? { ...globalConfig.processSettings, ...selectedPage!.overrideSettings } : globalConfig.processSettings;
-    const crop = computeCropRect(origW, origH, settings, detectedBBox);
+    const crop = computeCropRect(origW, origH, activeSettings, detectedBBox);
     
     ctx.strokeStyle = '#00ff00';
     ctx.lineWidth = 2;
@@ -134,8 +142,8 @@ export const CanvasViewer = () => {
     if (activeTool === 'crop') {
       const cropW = crop.x1 - crop.x0;
       let splitX = -1;
-      if (settings.pageProcessingMode === 'spread_split') {
-        const offsetPx = (settings.splitOffsetPercent / 100.0) * cropW;
+      if (activeSettings.page_processing_mode === 'spread_split') {
+        const offsetPx = (activeSettings.split_offset_percent / 100.0) * cropW;
         splitX = crop.x0 + Math.max(1, Math.min(cropW - 1, (cropW / 2) + offsetPx));
 
         ctx.strokeStyle = '#ff7b00';
@@ -166,10 +174,10 @@ export const CanvasViewer = () => {
         ctx.strokeRect(px - hSize/2, py - hSize/2, hSize, hSize);
       });
     }
-  }, [selectedPage, scale, globalConfig, previewImage, activeTool]);
+  }, [selectedPage, scale, activeSettings, previewImage, activeTool]);
 
   if (!selectedPage) {
-    return <div className="flex-1 bg-[#1e1e1e] flex items-center justify-center text-gray-500">No Page Selected</div>;
+    return <div className="flex-1 bg-[#0D0F12] flex items-center justify-center text-gray-500 text-sm">PDFを読み込んでください</div>;
   }
 
   const handleZoomIn = () => setScale(s => s === 'fit' ? 1.2 : Math.min(3, s + 0.2));
@@ -198,8 +206,7 @@ export const CanvasViewer = () => {
     if (activeTool !== 'crop' || !previewImage) return;
     const { x, y, drawScale } = getPointerPos(e);
     
-    const settings = selectedPage.overrideSettings ? { ...globalConfig.processSettings, ...selectedPage.overrideSettings } : globalConfig.processSettings;
-    const crop = computeCropRect(previewImage.origW, previewImage.origH, settings, previewImage.detectedBBox);
+    const crop = computeCropRect(previewImage.origW, previewImage.origH, activeSettings, previewImage.detectedBBox);
     
     const hitTest = (px: number, py: number, targetX: number, targetY: number, tolerance = 15) => {
       return Math.abs(px - targetX) < tolerance / drawScale && Math.abs(py - targetY) < tolerance / drawScale;
@@ -220,9 +227,9 @@ export const CanvasViewer = () => {
     else if (hitTest(x, y, cmx, cy1)) hit = 'bc';
     else if (hitTest(x, y, cx1, cy1)) hit = 'br';
 
-    if (!hit && settings.pageProcessingMode === 'spread_split') {
+    if (!hit && activeSettings.page_processing_mode === 'spread_split') {
       const cropW = cx1 - cx0;
-      const offsetPx = (settings.splitOffsetPercent / 100.0) * cropW;
+      const offsetPx = (activeSettings.split_offset_percent / 100.0) * cropW;
       const splitX = cx0 + Math.max(1, Math.min(cropW - 1, (cropW / 2) + offsetPx));
       if (Math.abs(x - splitX) < 15 / drawScale && y > cy0 && y < cy1) {
         hit = 'split';
@@ -235,7 +242,7 @@ export const CanvasViewer = () => {
         handle: hit,
         startX: x,
         startY: y,
-        startSettings: { ...settings }
+        startSettings: { ...activeSettings }
       });
     }
   };
@@ -246,42 +253,38 @@ export const CanvasViewer = () => {
     const dx = x - dragState.startX;
     const dy = y - dragState.startY;
     
-    const settings = dragState.startSettings;
+    const startSet = dragState.startSettings;
     const baseBBox = previewImage.detectedBBox || { x0: 0, y0: 0, x1: previewImage.origW, y1: previewImage.origH };
     const baseW = Math.max(1, baseBBox.x1 - baseBBox.x0);
     const baseH = Math.max(1, baseBBox.y1 - baseBBox.y0);
 
-    const newSettings = { ...settings };
+    const newSet = { ...startSet };
     
-    const startLeftTrimPx = baseW * (settings.manualTrimLeftPercent / 100.0);
-    const startRightTrimPx = baseW * (settings.manualTrimRightPercent / 100.0);
-    const startTopTrimPx = baseH * (settings.manualTrimTopPercent / 100.0);
-    const startBottomTrimPx = baseH * (settings.manualTrimBottomPercent / 100.0);
+    const startLeftTrimPx = baseW * (startSet.manual_trim_left_percent / 100.0);
+    const startRightTrimPx = baseW * (startSet.manual_trim_right_percent / 100.0);
+    const startTopTrimPx = baseH * (startSet.manual_trim_top_percent / 100.0);
+    const startBottomTrimPx = baseH * (startSet.manual_trim_bottom_percent / 100.0);
 
     if (dragState.handle.includes('l')) {
-      newSettings.manualTrimLeftPercent = Math.max(0, Math.min(100, ((startLeftTrimPx + dx) / baseW) * 100));
+      newSet.manual_trim_left_percent = Math.max(0, Math.min(100, ((startLeftTrimPx + dx) / baseW) * 100));
     }
     if (dragState.handle.includes('r')) {
-      newSettings.manualTrimRightPercent = Math.max(0, Math.min(100, ((startRightTrimPx - dx) / baseW) * 100));
+      newSet.manual_trim_right_percent = Math.max(0, Math.min(100, ((startRightTrimPx - dx) / baseW) * 100));
     }
     if (dragState.handle.includes('t')) {
-      newSettings.manualTrimTopPercent = Math.max(0, Math.min(100, ((startTopTrimPx + dy) / baseH) * 100));
+      newSet.manual_trim_top_percent = Math.max(0, Math.min(100, ((startTopTrimPx + dy) / baseH) * 100));
     }
     if (dragState.handle.includes('b')) {
-      newSettings.manualTrimBottomPercent = Math.max(0, Math.min(100, ((startBottomTrimPx - dy) / baseH) * 100));
+      newSet.manual_trim_bottom_percent = Math.max(0, Math.min(100, ((startBottomTrimPx - dy) / baseH) * 100));
     }
     if (dragState.handle === 'split') {
-      const oldCrop = computeCropRect(previewImage.origW, previewImage.origH, settings, previewImage.detectedBBox);
+      const oldCrop = computeCropRect(previewImage.origW, previewImage.origH, startSet, previewImage.detectedBBox);
       const cropW = oldCrop.x1 - oldCrop.x0;
-      const startOffsetPx = (settings.splitOffsetPercent / 100.0) * cropW;
-      newSettings.splitOffsetPercent = Math.max(-50, Math.min(50, ((startOffsetPx + dx) / cropW) * 100));
+      const startOffsetPx = (startSet.split_offset_percent / 100.0) * cropW;
+      newSet.split_offset_percent = Math.max(-20, Math.min(20, ((startOffsetPx + dx) / cropW) * 100));
     }
 
-    if (selectedPage.overrideSettings) {
-      updatePage(selectedPage.id, { overrideSettings: newSettings });
-    } else {
-      setGlobalConfig({ processSettings: newSettings });
-    }
+    updateSettings(newSet); // Update globally for simplicity. If overridden, it'll update global, user should save manually if desired, but let's update global.
   };
 
   const onPointerUp = (e: React.PointerEvent) => {
@@ -299,20 +302,15 @@ export const CanvasViewer = () => {
         <span className="text-xs font-mono text-gray-200 w-12 text-center select-none">
           {scale === 'fit' ? 'Fit' : `${Math.round(scale * 100)}%`}
         </span>
-        <button onClick={() => setScale(1)} className="text-xs text-gray-400 hover:text-white cursor-pointer select-none">100%</button>
-        <button onClick={() => setScale('fit')} className="text-xs text-gray-400 hover:text-white cursor-pointer select-none">全体表示</button>
+        <button onClick={() => setScale(1)} className="text-[10px] text-gray-400 hover:text-white cursor-pointer select-none font-medium">100%</button>
+        <button onClick={() => setScale('fit')} className="text-[10px] text-gray-400 hover:text-white cursor-pointer select-none font-medium">全体表示</button>
         <button onClick={handleZoomIn} className="text-gray-300 hover:text-white px-2 cursor-pointer font-bold">+</button>
-      </div>
-
-      <div className="absolute top-4 left-4 bg-[#161922]/90 backdrop-blur-md rounded-full px-3 py-1.5 flex items-center gap-2 z-10 border border-[#272B35] shadow-xl">
-        <button onClick={() => setActiveTool('pan')} className={`px-3 py-1.5 text-xs rounded-full font-medium transition-colors cursor-pointer select-none ${activeTool==='pan'?'bg-blue-600 text-white':'text-gray-400 hover:text-white'}`}>✋ Pan</button>
-        <button onClick={() => setActiveTool('crop')} className={`px-3 py-1.5 text-xs rounded-full font-medium transition-colors cursor-pointer select-none ${activeTool==='crop'?'bg-blue-600 text-white':'text-gray-400 hover:text-white'}`}>✂️ Crop</button>
       </div>
 
       <div className="flex-1 overflow-auto flex items-center justify-center p-8">
         <canvas 
           ref={canvasRef} 
-          className="shadow-[0_20px_50px_rgba(0,0,0,0.5)] touch-none"
+          className="shadow-[0_20px_50px_rgba(0,0,0,0.5)] touch-none bg-[#1e1e1e]"
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}

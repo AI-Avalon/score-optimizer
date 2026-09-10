@@ -1,78 +1,38 @@
-
 import { useStore } from '../../store/useScoreStore';
-import { useEffect, useState } from 'react';
-import { processPageImage } from '../../engine';
+import type { PageData } from '../../engine/types';
 
-export const FilmStrip = () => {
-  const { pages, selectedPageId, selectPage, globalConfig } = useStore();
-  const [processedPreviews, setProcessedPreviews] = useState<{left?: string, right?: string}>({});
-
-  useEffect(() => {
-    const selectedIndex = pages.findIndex(p => p.id === selectedPageId);
-    if (selectedIndex === -1) return;
-    const page = pages[selectedIndex];
-    
-    let active = true;
-    const renderPreview = async () => {
-      const datas = await processPageImage(page, selectedIndex, globalConfig);
-      if (!active) return;
-      
-      const toDataUrl = (data: ImageData) => {
-        const c = document.createElement('canvas');
-        c.width = data.width;
-        c.height = data.height;
-        c.getContext('2d')!.putImageData(data, 0, 0);
-        const res = c.toDataURL('image/jpeg', 0.5);
-        c.width = 0; c.height = 0;
-        return res;
-      };
-
-      setProcessedPreviews({
-        left: datas[0] ? toDataUrl(datas[0]) : undefined,
-        right: datas[1] ? toDataUrl(datas[1]) : undefined,
-      });
-    };
-    renderPreview();
-    return () => { active = false; };
-  }, [selectedPageId, pages, globalConfig]);
+export const Filmstrip = () => {
+  const { pages, selectedPageId, selectPage, pageOverrides } = useStore();
 
   if (pages.length === 0) return null;
 
   return (
-    <div className="h-48 bg-[#161922] border-t border-[#272B35] flex shrink-0 overflow-hidden z-20">
-      <div className="flex-1 flex gap-2 p-3 overflow-x-auto whitespace-nowrap hide-scrollbar">
-        {pages.map((p, i) => (
-          <div
-            key={p.id}
-            onClick={() => selectPage(p.id)}
-            className={`relative inline-block shrink-0 w-24 rounded border-2 cursor-pointer transition-colors ${
-              selectedPageId === p.id ? 'border-blue-500' : 'border-transparent hover:border-[#272B35]'
-            }`}
-          >
-            <div className="text-[9px] text-gray-500 absolute -top-4 left-0">Page {i + 1}</div>
-            {p.imageUrl ? (
-              <img src={p.imageUrl} alt={`page ${i+1}`} className="w-full h-full object-contain bg-black/20" />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center bg-black/20 text-xs text-gray-500">Blank</div>
-            )}
-            {p.overrideSettings && (
-              <div className="absolute top-1 right-1 w-2 h-2 rounded-full bg-orange-500" title="個別設定あり" />
-            )}
-          </div>
-        ))}
-      </div>
-
-      <div className="w-64 border-l border-[#272B35] p-2 bg-[#0D0F12] flex flex-col">
-        <div className="text-[10px] text-gray-400 mb-1">処理後プレビュー (現在ページ)</div>
-        <div className="flex-1 flex gap-2">
-          {processedPreviews.left ? (
-            <img src={processedPreviews.left} className="flex-1 object-contain bg-black/40 min-w-0" />
-          ) : <div className="flex-1 bg-black/20" />}
+    <div className="h-32 bg-[#161922] border-t border-[#272B35] flex shrink-0 overflow-hidden z-20">
+      <div className="flex-1 flex gap-3 p-3 overflow-x-auto hide-scrollbar whitespace-nowrap items-center">
+        {pages.map((p: PageData, i: number) => {
+          const isSelected = selectedPageId === p.id;
+          const hasOverride = !!pageOverrides[i];
           
-          {processedPreviews.right ? (
-            <img src={processedPreviews.right} className="flex-1 object-contain bg-black/40 min-w-0" />
-          ) : <div className="flex-1 bg-black/20" />}
-        </div>
+          return (
+            <div
+              key={p.id}
+              onClick={() => selectPage(p.id)}
+              className={`relative inline-flex flex-col h-full shrink-0 w-[4.5rem] rounded border-2 cursor-pointer transition-colors ${
+                isSelected ? 'border-blue-500' : 'border-transparent hover:border-[#272B35]'
+              }`}
+            >
+              <div className="absolute -top-1 -right-1 z-10 flex gap-1">
+                {hasOverride && (
+                  <div className="text-[8px] bg-orange-600 px-1 py-0.5 rounded text-white font-bold leading-none">個別</div>
+                )}
+              </div>
+              <img src={p.originalImage} className="w-full h-full object-contain bg-black/20 rounded-sm" />
+              <div className="text-center text-[10px] text-gray-400 mt-1">
+                {i + 1}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
