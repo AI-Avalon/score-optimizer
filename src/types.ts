@@ -20,6 +20,118 @@ export type PageOrder = 'left_to_right' | 'right_to_left';
 export type OutputColorMode = 'monochrome' | 'original';
 export type FrontMatterMode = 'single' | 'split' | 'skip';
 
+// ─── 用紙判型 (score-lossless-engine skill §3) ───────────────────────
+
+/** 回転角度 (0, 90, 180, 270) */
+export type RotationDeg = 0 | 90 | 180 | 270;
+
+/** 用紙プリセットキー */
+export type PaperPresetKey =
+  | 'a4_portrait'
+  | 'b4_portrait'
+  | 'kiku_music'
+  | 'a3_landscape'
+  | 'a3_portrait'
+  | 'us_letter'
+  | 'custom';
+
+/** 用紙定義 (mm → pt 変換済み) */
+export interface PaperConfig {
+  readonly key: PaperPresetKey;
+  readonly label: string;
+  readonly description: string;
+  readonly widthMm: number;
+  readonly heightMm: number;
+  readonly widthPt: number;
+  readonly heightPt: number;
+}
+
+/** mm → pt 変換 (1mm = 72/25.4 pt) */
+const mmToPt = (mm: number): number => mm * (72 / 25.4);
+
+/**
+ * オーケストラ用紙判型プリセット (score-lossless-engine skill §3)
+ *
+ * - A4 縦: 210 x 297 mm (オケ譜・練習用)
+ * - B4 縦: 257 x 364 mm (日本のオケ標準)
+ * - 菊倍判: 218 x 304 mm (輸入譜・ピアノ譜・日本の出版楽譜標準)
+ * - A3 横: 420 x 297 mm (指揮者用スタディスコア)
+ * - A3 縦: 297 x 420 mm (大編成フルスコア)
+ * - US Letter: 215.9 x 279.4 mm (北米オケ標準)
+ * - カスタム: 幅と高さをミリ単位で自由入力
+ */
+export const PAPER_PRESETS: Record<PaperPresetKey, PaperConfig> = {
+  a4_portrait: {
+    key: 'a4_portrait',
+    label: 'A4 縦',
+    description: 'オケ譜・練習用 (210×297mm)',
+    widthMm: 210,
+    heightMm: 297,
+    widthPt: mmToPt(210),
+    heightPt: mmToPt(297),
+  },
+  b4_portrait: {
+    key: 'b4_portrait',
+    label: 'B4 縦 (日本のオケ標準)',
+    description: '国内オーケストラ・吹奏楽の標準パート譜 (257×364mm)',
+    widthMm: 257,
+    heightMm: 364,
+    widthPt: mmToPt(257),
+    heightPt: mmToPt(364),
+  },
+  kiku_music: {
+    key: 'kiku_music',
+    label: '菊倍判 (楽譜標準)',
+    description: '輸入譜・ピアノ譜・日本の出版楽譜標準 (218×304mm)',
+    widthMm: 218,
+    heightMm: 304,
+    widthPt: mmToPt(218),
+    heightPt: mmToPt(304),
+  },
+  a3_landscape: {
+    key: 'a3_landscape',
+    label: 'A3 横 (見開きスコア)',
+    description: '指揮者用スタディスコア (420×297mm)',
+    widthMm: 420,
+    heightMm: 297,
+    widthPt: mmToPt(420),
+    heightPt: mmToPt(297),
+  },
+  a3_portrait: {
+    key: 'a3_portrait',
+    label: 'A3 縦 (総譜)',
+    description: '大編成フルスコア (297×420mm)',
+    widthMm: 297,
+    heightMm: 420,
+    widthPt: mmToPt(297),
+    heightPt: mmToPt(420),
+  },
+  us_letter: {
+    key: 'us_letter',
+    label: 'US Letter',
+    description: '北米オケ標準 (215.9×279.4mm)',
+    widthMm: 215.9,
+    heightMm: 279.4,
+    widthPt: mmToPt(215.9),
+    heightPt: mmToPt(279.4),
+  },
+  custom: {
+    key: 'custom',
+    label: 'カスタム (mm入力)',
+    description: '幅と高さをミリ単位で自由入力',
+    widthMm: 210,
+    heightMm: 297,
+    widthPt: mmToPt(210),
+    heightPt: mmToPt(297),
+  },
+};
+
+/** 後方互換: A4定数 */
+export const A4 = {
+  widthPt: PAPER_PRESETS.a4_portrait.widthPt,
+  heightPt: PAPER_PRESETS.a4_portrait.heightPt,
+} as const;
+
 // ─── ProcessSettings (app.py L19-37 完全移植) ─────────────────────────
 
 export interface ProcessSettings {
@@ -74,6 +186,37 @@ export interface PageOverride {
   outputColorMode: OutputColorMode;
 }
 
+// ─── ページ管理 (仮想ページ配列) ──────────────────────────────────────
+
+/** 仮想ページエントリ (削除・挿入・回転を管理) */
+export interface PageEntry {
+  /** 元のPDFページインデックス (0始まり)。白紙の場合は -1 */
+  readonly sourceIndex: number;
+  /** 白紙ページか */
+  readonly isBlank: boolean;
+  /** 削除フラグ */
+  deleted: boolean;
+  /** 回転角度 */
+  rotation: RotationDeg;
+}
+
+// ─── 履歴管理 (Undo/Redo) ─────────────────────────────────────────────
+
+export type HistoryAction =
+  | { type: 'delete'; pageIndex: number }
+  | { type: 'restore'; pageIndex: number }
+  | { type: 'insertBlank'; pageIndex: number }
+  | { type: 'removeBlank'; pageIndex: number }
+  | { type: 'rotate'; pageIndex: number; prevRotation: RotationDeg; newRotation: RotationDeg };
+
+// ─── プログレス情報 ───────────────────────────────────────────────────
+
+export interface ProgressInfo {
+  current: number;
+  total: number;
+  message: string;
+}
+
 // ─── Default Values (app.py L676-691 初期値) ──────────────────────────
 
 export const DEFAULT_SETTINGS: ProcessSettings = {
@@ -109,9 +252,7 @@ export interface OtsuWorkerResponse {
   otsuThreshold: number;
 }
 
-// ─── A4 Constants (pdf-lib, research.pdf 課題4) ───────────────────────
-
-export const A4 = {
-  widthPt: 595.28,
-  heightPt: 841.89,
-} as const;
+/** mm → pt 変換ユーティリティ (外部使用向け) */
+export function convertMmToPt(mm: number): number {
+  return mmToPt(mm);
+}

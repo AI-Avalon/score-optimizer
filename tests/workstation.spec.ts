@@ -1,7 +1,15 @@
 import { test, expect } from '@playwright/test';
 
-test.describe('Score Optimizer 2.0 実機ブラウザ自動検証', () => {
-  test('デスクトップ: PDF読込・描画・コンソールエラー0件チェック', async ({ page }) => {
+// ── デスクトップテスト ──────────────────────────────────────────────
+
+test.describe('デスクトップ検証', () => {
+  test('初期表示・用紙選択・コンソールエラー0件', async ({ page }, testInfo) => {
+    // モバイルプロジェクトではスキップ
+    if (testInfo.project.name === 'Mobile Safari') {
+      test.skip();
+      return;
+    }
+
     const consoleErrors: string[] = [];
     page.on('console', (msg) => {
       if (msg.type() === 'error') consoleErrors.push(msg.text());
@@ -11,36 +19,89 @@ test.describe('Score Optimizer 2.0 実機ブラウザ自動検証', () => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
-    // 「見開きテスト.pdf を読込」ボタンをクリック
-    const testBtn = page.getByRole('button', { name: /見開きテスト|テスト/i });
-    await expect(testBtn).toBeVisible({ timeout: 10000 });
-    await testBtn.click();
+    // ドロップゾーンの空状態が表示
+    const emptyState = page.getByText('PDF をドラッグ＆ドロップ');
+    await expect(emptyState).toBeVisible({ timeout: 10000 });
 
-    // Canvasの描画待機 (白紙でないこと)
-    const canvas = page.locator('canvas').first();
-    await expect(canvas).toBeVisible({ timeout: 15000 });
+    // 用紙選択ドロップダウン
+    const paperSelect = page.locator('[data-testid="paper-select"]');
+    await expect(paperSelect).toBeVisible({ timeout: 5000 });
 
-    // 下部フィルムストリップのサムネイルが表示されているか
-    await page.waitForTimeout(1500);
+    // 全7種用紙プリセット
+    const options = await paperSelect.locator('option').allTextContents();
+    expect(options).toContain('A4 縦');
+    expect(options).toContain('B4 縦 (日本のオケ標準)');
+    expect(options).toContain('菊倍判 (楽譜標準)');
+    expect(options).toContain('A3 横 (見開きスコア)');
+    expect(options).toContain('A3 縦 (総譜)');
+    expect(options).toContain('US Letter');
+    expect(options).toContain('カスタム (mm入力)');
+
+    // 横スクロールなし
     const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     const clientWidth = await page.evaluate(() => document.documentElement.clientWidth);
     expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
 
-    // スクリーンショット保存
-    await page.screenshot({ path: 'test-results/desktop-render.png', fullPage: true });
-
-    // コンソールエラー0件検証
+    await page.screenshot({ path: 'test-results/desktop-initial.png', fullPage: true });
     expect(consoleErrors).toHaveLength(0);
   });
 
-  test('モバイル: 横スクロール見切れゼロチェック', async ({ page }) => {
+  test('Sidebar に回転・一括操作ボタンが存在', async ({ page }, testInfo) => {
+    if (testInfo.project.name === 'Mobile Safari') {
+      test.skip();
+      return;
+    }
+
+    const consoleErrors: string[] = [];
+    page.on('console', (msg) => {
+      if (msg.type() === 'error') consoleErrors.push(msg.text());
+    });
+    page.on('pageerror', (err) => consoleErrors.push(err.message));
+
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
+    // 全ページに適用ボタン
+    await expect(page.getByRole('button', { name: /全ページに適用/i })).toBeVisible({ timeout: 5000 });
+
+    // 初期設定にリセットボタン
+    await expect(page.getByRole('button', { name: /初期設定にリセット/i })).toBeVisible({ timeout: 5000 });
+
+    // 回転コントロール
+    await expect(page.getByRole('button', { name: /現在ページ 90°/i })).toBeVisible({ timeout: 5000 });
+
+    expect(consoleErrors).toHaveLength(0);
+  });
+});
+
+// ── モバイルテスト ──────────────────────────────────────────────────
+
+test.describe('モバイル検証', () => {
+  test('横スクロール見切れゼロ + 専用レイアウト', async ({ page }, testInfo) => {
+    if (testInfo.project.name === 'Desktop Chrome') {
+      test.skip();
+      return;
+    }
+
+    const consoleErrors: string[] = [];
+    page.on('console', (msg) => {
+      if (msg.type() === 'error') consoleErrors.push(msg.text());
+    });
+    page.on('pageerror', (err) => consoleErrors.push(err.message));
+
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    // 横スクロールなし
     const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     const clientWidth = await page.evaluate(() => document.documentElement.clientWidth);
     expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
 
-    await page.screenshot({ path: 'test-results/mobile-render.png', fullPage: true });
+    // モバイルではSidebar (aside) が存在しないこと
+    const sidebar = page.locator('aside');
+    await expect(sidebar).toHaveCount(0);
+
+    await page.screenshot({ path: 'test-results/mobile-initial.png', fullPage: true });
+    expect(consoleErrors).toHaveLength(0);
   });
 });

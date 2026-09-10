@@ -1,21 +1,21 @@
 /**
- * PDF Engine — PDF.js ライフサイクル & 300 DPI A4 出力パイプライン
+ * PDF Engine — PDF.js ライフサイクル & 300 DPI 用紙判型対応出力パイプライン
  *
  * pdf-lifecycle-reviewer skill:
  *   - renderRequestId で排他制御
  *   - RenderingCancelledException を明示キャッチ&無視
  *   - pdfDoc.destroy() をアンマウント時に実行
  *
- * research.pdf 課題4:
- *   - pdf-lib で A4 (595.28 × 841.89 pt) ページ生成
+ * score-lossless-engine skill:
+ *   - 7種用紙判型 (A4, B4, 菊倍判, A3横, A3縦, US Letter, カスタム)
  *   - 0mm マージン（余白なし最大化）、アスペクト比維持センタリング
  *   - canvas.width = 0; canvas.height = 0; でメモリ即時解放
+ *   - ページ回転、白紙ページ、削除ページ対応
  */
 
 import * as pdfjsLib from 'pdfjs-dist';
-import { PDFDocument } from 'pdf-lib';
-import { A4 } from '../types';
-import type { NormalizedRect } from '../types';
+import { PDFDocument, rgb } from 'pdf-lib';
+import type { NormalizedRect, PageEntry } from '../types';
 import { normalizedToSourceRect, splitNormalizedRectIntoTwo, fitNormalizedRectToSingle } from './geometry';
 import type { PageOrder, PageProcessingMode } from '../types';
 
@@ -153,7 +153,7 @@ export async function renderPageToImageBitmap(
   return bitmap;
 }
 
-// ── 300 DPI A4 PDF Export Pipeline (research.pdf 課題4) ────────────────
+// ── 300 DPI 用紙判型対応 PDF Export Pipeline ────────────────────────────
 
 export interface ExportOptions {
   cropRect: NormalizedRect;
@@ -162,31 +162,62 @@ export interface ExportOptions {
   pageOrder: PageOrder;
   bodyStartPage: number;
   frontMatterMode: 'single' | 'split' | 'skip';
+  /** 出力用紙幅 (pt) */
+  paperWidthPt: number;
+  /** 出力用紙高さ (pt) */
+  paperHeightPt: number;
+  /** マージン (pt) — デフォルト0 */
+  marginPt: number;
+  /** 仮想ページ配列 (削除・白紙・回転) */
+  pages: PageEntry[];
   getEffectiveSettings: (pageIndex: number) => {
     cropRect: NormalizedRect;
     pageProcessingMode: PageProcessingMode;
     splitOffsetPercent: number;
     pageOrder: PageOrder;
   };
-  onProgress?: (current: number, total: number) => void;
+  onProgress?: (current: number, total: number, message: string) => void;
 }
 
 export async function exportTo300DpiPdf(
   pdfDoc: PDFDocumentProxy,
   options: ExportOptions,
 ): Promise<Blob> {
-  const totalPages = pdfDoc.numPages;
   const outPdf = await PDFDocument.create();
   const DPI_SCALE = 300 / 72;
+  const { paperWidthPt, paperHeightPt, marginPt } = options;
 
-  for (let pageIdx = 0; pageIdx < totalPages; pageIdx++) {
-    const pageNo = pageIdx + 1;
-    const pageSettings = options.getEffectiveSettings(pageIdx);
+  // マージン適用後の安全領域
+  const safeW = paperWidthPt - marginPt * 2;
+  const safeH = paperHeightPt - marginPt * 2;
+
+  const totalEntries = options.pages.length;
+
+  for (let virtualIdx = 0; virtualIdx < totalEntries; virtualIdx++) {
+    const entry = options.pages[virtualIdx];
+
+    // 削除済みページをスキップ
+    if (entry.deleted) {
+      options.onProgress?.(virtualIdx + 1, totalEntries, `スキップ: 削除済みページ ${virtualIdx + 1}`);
+      continue;
+    }
+
+    // 白紙ページ挿入
+    if (entry.isBlank) {
+      outPdf.addPage([paperWidthPt, paperHeightPt]);
+      options.onProgress?.(virtualIdx + 1, totalEntries, `白紙ページ ${virtualIdx + 1} を追加`);
+      // メインスレッドに制御を返す
+      await new Promise((r) => setTimeout(r, 0));
+      continue;
+    }
+
+    const pageNo = entry.sourceIndex + 1;
+    const pageSettings = options.getEffectiveSettings(virtualIdx);
 
     // Front matter handling (app.py L1162-1170)
     const isFront = pageNo < options.bodyStartPage;
     if (isFront && options.frontMatterMode === 'skip') {
-      options.onProgress?.(pageIdx + 1, totalPages);
+      options.onProgress?.(virtualIdx + 1, totalEntries, `スキップ: 本文前ページ ${virtualIdx + 1}`);
       continue;
     }
 
@@ -194,6 +225,8 @@ export async function exportTo300DpiPdf(
       isFront && options.frontMatterMode === 'single'
         ? 'single_fit'
         : pageSettings.pageProcessingMode;
+
+    options.onProgress?.(virtualIdx + 1, totalEntries, `レンダリング中: ページ ${virtualIdx + 1} / ${totalEntries}`);
 
     // High-resolution rendering
     const page = await pdfDoc.getPage(pageNo);
@@ -220,10 +253,32 @@ export async function exportTo300DpiPdf(
       throw error;
     }
 
+    // 回転処理
+    let finalCanvas: HTMLCanvasElement;
+    if (entry.rotation !== 0) {
+      finalCanvas = document.createElement('canvas');
+      const isSwapped = entry.rotation === 90 || entry.rotation === 270;
+      finalCanvas.width = isSwapped ? renderCanvas.height : renderCanvas.width;
+      finalCanvas.height = isSwapped ? renderCanvas.width : renderCanvas.height;
+      const rotCtx = finalCanvas.getContext('2d')!;
+
+      rotCtx.save();
+      rotCtx.translate(finalCanvas.width / 2, finalCanvas.height / 2);
+      rotCtx.rotate((entry.rotation * Math.PI) / 180);
+      rotCtx.drawImage(renderCanvas, -renderCanvas.width / 2, -renderCanvas.height / 2);
+      rotCtx.restore();
+
+      // 元のrenderCanvasを即時解放
+      renderCanvas.width = 0;
+      renderCanvas.height = 0;
+    } else {
+      finalCanvas = renderCanvas;
+    }
+
     // Crop extraction
     const sourceRect = normalizedToSourceRect(pageSettings.cropRect, {
-      width: renderCanvas.width,
-      height: renderCanvas.height,
+      width: finalCanvas.width,
+      height: finalCanvas.height,
     });
 
     const cropCanvas = document.createElement('canvas');
@@ -231,14 +286,14 @@ export async function exportTo300DpiPdf(
     cropCanvas.height = sourceRect.height;
     const cropCtx = cropCanvas.getContext('2d')!;
     cropCtx.drawImage(
-      renderCanvas,
+      finalCanvas,
       sourceRect.x, sourceRect.y, sourceRect.width, sourceRect.height,
       0, 0, sourceRect.width, sourceRect.height,
     );
 
-    // Full render canvas メモリ解放
-    renderCanvas.width = 0;
-    renderCanvas.height = 0;
+    // finalCanvas メモリ解放
+    finalCanvas.width = 0;
+    finalCanvas.height = 0;
 
     // Generate output page(s)
     const fullCropNorm: NormalizedRect = { x: 0, y: 0, width: 1, height: 1 };
@@ -267,14 +322,14 @@ export async function exportTo300DpiPdf(
         0, 0, partRect.width, partRect.height,
       );
 
-      // 0mm margin, aspect ratio maintained, centered (geometry rule)
-      const scaleX = A4.widthPt / partCanvas.width;
-      const scaleY = A4.heightPt / partCanvas.height;
+      // S = min(SafeW / CropW, SafeH / CropH) — アスペクト比維持 (score-lossless-engine skill §3)
+      const scaleX = safeW / partCanvas.width;
+      const scaleY = safeH / partCanvas.height;
       const fitScale = Math.min(scaleX, scaleY);
       const drawW = partCanvas.width * fitScale;
       const drawH = partCanvas.height * fitScale;
-      const tx = (A4.widthPt - drawW) / 2;
-      const ty = (A4.heightPt - drawH) / 2;
+      const tx = marginPt + (safeW - drawW) / 2;
+      const ty = marginPt + (safeH - drawH) / 2;
 
       // Convert to PNG bytes
       const blob = await new Promise<Blob>((resolve, reject) => {
@@ -286,8 +341,16 @@ export async function exportTo300DpiPdf(
       const arrayBuffer = await blob.arrayBuffer();
       const pngImage = await outPdf.embedPng(new Uint8Array(arrayBuffer));
 
-      const a4Page = outPdf.addPage([A4.widthPt, A4.heightPt]);
-      a4Page.drawImage(pngImage, { x: tx, y: A4.heightPt - ty - drawH, width: drawW, height: drawH });
+      const outPage = outPdf.addPage([paperWidthPt, paperHeightPt]);
+
+      // 白背景を明示描画
+      outPage.drawRectangle({
+        x: 0, y: 0,
+        width: paperWidthPt, height: paperHeightPt,
+        color: rgb(1, 1, 1),
+      });
+
+      outPage.drawImage(pngImage, { x: tx, y: paperHeightPt - ty - drawH, width: drawW, height: drawH });
 
       // メモリ即時解放
       partCanvas.width = 0;
@@ -298,7 +361,10 @@ export async function exportTo300DpiPdf(
     cropCanvas.width = 0;
     cropCanvas.height = 0;
 
-    options.onProgress?.(pageIdx + 1, totalPages);
+    options.onProgress?.(virtualIdx + 1, totalEntries, `配置完了: ページ ${virtualIdx + 1} / ${totalEntries}`);
+
+    // メインスレッドに制御を返す (score-lossless-engine skill §2)
+    await new Promise((r) => setTimeout(r, 0));
   }
 
   const pdfBytes = await outPdf.save();

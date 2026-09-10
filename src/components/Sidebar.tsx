@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { useScoreStore } from '../store/useScoreStore';
-import { Sparkles, Save, Trash2 } from 'lucide-react';
-import type { PageProcessingMode, PageOrder, OutputColorMode, FrontMatterMode } from '../types';
+import { Sparkles, Save, Trash2, RotateCw, Copy, RefreshCcw } from 'lucide-react';
+import type { PageProcessingMode, PageOrder, OutputColorMode, FrontMatterMode, RotationDeg } from '../types';
 
 /**
  * Sidebar — app.py の全機能を網羅した設定パネル
@@ -14,6 +14,8 @@ import type { PageProcessingMode, PageOrder, OutputColorMode, FrontMatterMode } 
  * 5. 見開き設定 (分割位置、ページ順)
  * 6. ページ構成 (本文開始ページ、本文前)
  * 7. ページ個別設定
+ * 8. 回転コントロール
+ * 9. 一括操作
  */
 export function Sidebar() {
   const settings = useScoreStore((s) => s.settings);
@@ -26,6 +28,13 @@ export function Sidebar() {
   const currentPage = useScoreStore((s) => s.currentPage);
   const setCurrentPage = useScoreStore((s) => s.setCurrentPage);
   const sidebarOpen = useScoreStore((s) => s.sidebarOpen);
+  const rotatePage = useScoreStore((s) => s.rotatePage);
+  const rotateOddPages = useScoreStore((s) => s.rotateOddPages);
+  const rotateEvenPages = useScoreStore((s) => s.rotateEvenPages);
+  const rotateAllPages = useScoreStore((s) => s.rotateAllPages);
+  const applySettingsToAllPages = useScoreStore((s) => s.applySettingsToAllPages);
+  const resetToDefaults = useScoreStore((s) => s.resetToDefaults);
+  const pages = useScoreStore((s) => s.pages);
 
   // ── Helpers ──────────────────────────────────────────────────────
   const radio = useCallback(
@@ -78,6 +87,30 @@ export function Sidebar() {
         flexShrink: 0,
       }}
     >
+      {/* ── 一括操作 ──────────────────────────────────────── */}
+      <div className="settings-section">
+        <div className="section-title">一括操作</div>
+        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+          <button
+            className="btn btn-sm btn-green"
+            onClick={applySettingsToAllPages}
+            style={{ flex: '1 1 auto' }}
+            disabled={pages.length === 0}
+          >
+            <Copy size={12} />
+            全ページに適用
+          </button>
+          <button
+            className="btn btn-sm"
+            onClick={resetToDefaults}
+            style={{ flex: '1 1 auto' }}
+          >
+            <RefreshCcw size={12} />
+            初期設定にリセット
+          </button>
+        </div>
+      </div>
+
       {/* ── 1. ページ処理モード ──────────────────────────────── */}
       <div className="settings-section">
         <div className="section-title">ページ処理モード</div>
@@ -184,7 +217,47 @@ export function Sidebar() {
         </div>
       </div>
 
-      {/* ── 7. ページ個別設定 (app.py L654-671) ──────────────── */}
+      {/* ── 7. 回転コントロール ────────────────────────────────── */}
+      <div className="settings-section">
+        <div className="section-title">回転</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <button
+            className="btn btn-sm"
+            onClick={() => rotatePage(currentPage, 90 as RotationDeg)}
+            disabled={pages.length === 0}
+          >
+            <RotateCw size={12} />
+            現在ページ 90°
+          </button>
+          <div style={{ display: 'flex', gap: '4px' }}>
+            <button
+              className="btn btn-sm"
+              onClick={() => rotateOddPages(180 as RotationDeg)}
+              style={{ flex: 1 }}
+              disabled={pages.length === 0}
+            >
+              奇数ページ 180°
+            </button>
+            <button
+              className="btn btn-sm"
+              onClick={() => rotateEvenPages(180 as RotationDeg)}
+              style={{ flex: 1 }}
+              disabled={pages.length === 0}
+            >
+              偶数ページ 180°
+            </button>
+          </div>
+          <button
+            className="btn btn-sm"
+            onClick={() => rotateAllPages(90 as RotationDeg)}
+            disabled={pages.length === 0}
+          >
+            全ページ一括 90°
+          </button>
+        </div>
+      </div>
+
+      {/* ── 8. ページ個別設定 (app.py L654-671) ──────────────── */}
       <div className="settings-section">
         <div className="section-title">ページ個別設定</div>
         <p style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '8px', lineHeight: '1.4' }}>
