@@ -1,51 +1,79 @@
+
 import { useStore } from '../../store/useScoreStore';
+import { useEffect, useState } from 'react';
+import { processPageImage } from '../../engine';
 
 export const FilmStrip = () => {
-  const { pages, selectedPageId, selectPage, removePage, insertBlankPage } = useStore();
+  const { pages, selectedPageId, selectPage, globalConfig } = useStore();
+  const [processedPreviews, setProcessedPreviews] = useState<{left?: string, right?: string}>({});
+
+  useEffect(() => {
+    const selectedIndex = pages.findIndex(p => p.id === selectedPageId);
+    if (selectedIndex === -1) return;
+    const page = pages[selectedIndex];
+    
+    let active = true;
+    const renderPreview = async () => {
+      const datas = await processPageImage(page, selectedIndex, globalConfig);
+      if (!active) return;
+      
+      const toDataUrl = (data: ImageData) => {
+        const c = document.createElement('canvas');
+        c.width = data.width;
+        c.height = data.height;
+        c.getContext('2d')!.putImageData(data, 0, 0);
+        const res = c.toDataURL('image/jpeg', 0.5);
+        c.width = 0; c.height = 0;
+        return res;
+      };
+
+      setProcessedPreviews({
+        left: datas[0] ? toDataUrl(datas[0]) : undefined,
+        right: datas[1] ? toDataUrl(datas[1]) : undefined,
+      });
+    };
+    renderPreview();
+    return () => { active = false; };
+  }, [selectedPageId, pages, globalConfig]);
+
+  if (pages.length === 0) return null;
 
   return (
-    <div className="h-24 bg-slate-panel border-t border-slate-border flex items-center px-2 gap-1 overflow-x-auto shrink-0">
-      {pages.map((page, idx) => (
-        <div
-          key={page.id}
-          onClick={() => selectPage(page.id)}
-          className={`relative h-[72px] min-w-[52px] rounded border-2 cursor-pointer transition-all flex items-center justify-center text-[9px] shrink-0 ${
-            selectedPageId === page.id
-              ? 'border-blue-500 bg-blue-500/10'
-              : 'border-slate-border bg-slate-base hover:border-gray-500'
-          }`}
-          style={{ aspectRatio: '0.707' }}
-        >
-          {page.isBlank ? (
-            <span className="text-gray-600">白紙</span>
-          ) : (
-            <span className="text-gray-400">{idx + 1}</span>
-          )}
-          {page.pageType === 'spread' && (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="w-px h-full bg-red-500/50" />
-            </div>
-          )}
-          {/* 右クリックメニュー代わりの×ボタン */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              removePage(page.id);
-            }}
-            className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-white text-[8px] flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity"
+    <div className="h-48 bg-slate-panel border-t border-slate-border flex shrink-0 overflow-hidden">
+      <div className="flex-1 flex gap-2 p-3 overflow-x-auto">
+        {pages.map((p, i) => (
+          <div
+            key={p.id}
+            onClick={() => selectPage(p.id)}
+            className={`relative shrink-0 w-24 rounded border-2 cursor-pointer transition-colors ${
+              selectedPageId === p.id ? 'border-blue-500' : 'border-transparent hover:border-slate-border'
+            }`}
           >
-            ×
-          </button>
+            <div className="text-[9px] text-gray-500 absolute -top-4 left-0">Page {i + 1}</div>
+            {p.imageUrl ? (
+              <img src={p.imageUrl} alt={`page ${i+1}`} className="w-full h-full object-contain bg-black/20" />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center bg-black/20 text-xs text-gray-500">Blank</div>
+            )}
+            {p.overrideSettings && (
+              <div className="absolute top-1 right-1 w-2 h-2 rounded-full bg-orange-500" title="個別設定あり" />
+            )}
+          </div>
+        ))}
+      </div>
+
+      <div className="w-64 border-l border-slate-border p-2 bg-slate-800 flex flex-col">
+        <div className="text-[10px] text-gray-400 mb-1">処理後プレビュー (現在ページ)</div>
+        <div className="flex-1 flex gap-2">
+          {processedPreviews.left ? (
+            <img src={processedPreviews.left} className="flex-1 object-contain bg-black/40 min-w-0" />
+          ) : <div className="flex-1 bg-black/20" />}
+          
+          {processedPreviews.right ? (
+            <img src={processedPreviews.right} className="flex-1 object-contain bg-black/40 min-w-0" />
+          ) : <div className="flex-1 bg-black/20" />}
         </div>
-      ))}
-      {/* 白紙追加ボタン */}
-      <button
-        onClick={() => insertBlankPage(pages.length)}
-        className="h-[72px] min-w-[52px] rounded border-2 border-dashed border-gray-600 hover:border-gray-400 flex items-center justify-center text-gray-500 hover:text-gray-300 text-lg transition-colors shrink-0"
-        title="白紙ページを挿入"
-      >
-        +
-      </button>
+      </div>
     </div>
   );
 };

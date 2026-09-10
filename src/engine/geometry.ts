@@ -1,46 +1,12 @@
-import type { BidiMarginConfig } from '../types';
+import type { ProcessSettings } from '../types';
 
-/** mm→インチ変換係数 */
 export const MM_PER_INCH = 25.4;
-
-/** 印刷DPI */
 export const PRINT_DPI = 300;
-
-/** PDF標準DPI */
 export const PDF_DPI = 72;
 
-/** mm値をピクセルに変換（指定スケール適用） */
 export const mmToPx = (mm: number, scale = 1.0): number =>
   Math.round((mm / MM_PER_INCH) * PRINT_DPI * scale);
 
-/**
- * アスペクト比を保持したまま、ソース矩形を描画先矩形にフィットさせる計算
- */
-export const fitAspectRatio = (
-  srcW: number,
-  srcH: number,
-  dstW: number,
-  dstH: number
-): { w: number; h: number; x: number; y: number } => {
-  const srcAspect = srcW / srcH;
-  const dstAspect = dstW / dstH;
-  let w: number, h: number;
-  if (srcAspect > dstAspect) {
-    // ソースのほうが横長 → 幅に合わせる
-    w = dstW;
-    h = dstW / srcAspect;
-  } else {
-    // ソースのほうが縦長 → 高さに合わせる
-    h = dstH;
-    w = dstH * srcAspect;
-  }
-  return { w, h, x: (dstW - w) / 2, y: (dstH - h) / 2 };
-};
-
-/**
- * 2点クリックから傾き角度を算出する（水平補正用）
- * θ = atan2(Δy, Δx)
- */
 export const calcDeskewAngle = (
   x1: number,
   y1: number,
@@ -52,49 +18,14 @@ export const calcDeskewAngle = (
   return { angleRad, angleDeg };
 };
 
-/**
- * 余白の計算
- * 奇数ページ（右ページ）は inside=left, outside=right
- * 偶数ページ（左ページ）は inside=right, outside=left
- */
-export const getEffectiveMargins = (
-  margins: BidiMarginConfig,
-  isLeftPage: boolean,
-  accordionMode: boolean
-) => {
-  if (accordionMode) {
-    return {
-      top: margins.topMm,
-      bottom: margins.bottomMm,
-      left: margins.insideMm,
-      right: margins.outsideMm
-    };
-  }
-
-  // isLeftPageがtrueの場合は偶数ページとみなす（左側に配置されるページ）
-  // その場合、ノド（inside）は右側になる
-  const leftMm = isLeftPage ? margins.outsideMm : margins.insideMm;
-  const rightMm = isLeftPage ? margins.insideMm : margins.outsideMm;
-
-  return {
-    top: margins.topMm,
-    bottom: margins.bottomMm,
-    left: leftMm,
-    right: rightMm
-  };
-};
-
-/**
- * スキャナの黒枠などを無視するため、コンテンツ領域のバウンディングボックスを検出
- */
 export const detectContentBBox = (
-  ctx: CanvasRenderingContext2D,
+  ctx: CanvasRenderingContext2D | ImageData,
   width: number,
   height: number,
-  blackThreshold: number = 50
-): { x: number; y: number; w: number; h: number } => {
-  const imageData = ctx.getImageData(0, 0, width, height);
-  const data = imageData.data;
+  blackThreshold: number = 50,
+  padding: number = 0
+): { x0: number; y0: number; x1: number; y1: number } => {
+  const data = 'data' in ctx ? ctx.data : ctx.getImageData(0, 0, width, height).data;
   
   let minX = width;
   let minY = height;
@@ -119,13 +50,48 @@ export const detectContentBBox = (
   }
   
   if (minX > maxX || minY > maxY) {
-    return { x: 0, y: 0, w: width, h: height };
+    return { x0: 0, y0: 0, x1: width, y1: height };
   }
   
-  return {
-    x: minX,
-    y: minY,
-    w: maxX - minX + 1,
-    h: maxY - minY + 1
-  };
+  minX = Math.max(0, minX - padding);
+  minY = Math.max(0, minY - padding);
+  maxX = Math.min(width, maxX + padding + 1);
+  maxY = Math.min(height, maxY + padding + 1);
+
+  if (maxX <= minX || maxY <= minY) {
+    return { x0: 0, y0: 0, x1: width, y1: height };
+  }
+
+  return { x0: minX, y0: minY, x1: maxX, y1: maxY };
+};
+
+export const computeCropRect = (
+  width: number,
+  height: number,
+  settings: ProcessSettings,
+  detectedBBox?: { x0: number; y0: number; x1: number; y1: number }
+) => {
+  let x0 = 0, y0 = 0, x1 = width, y1 = height;
+
+  if (settings.autoCropEnabled && detectedBBox) {
+    x0 = detectedBBox.x0;
+    y0 = detectedBBox.y0;
+    x1 = detectedBBox.x1;
+    y1 = detectedBBox.y1;
+  }
+
+  const cropW = Math.max(1, x1 - x0);
+  const cropH = Math.max(1, y1 - y0);
+
+  const leftTrim = Math.floor(cropW * (settings.manualTrimLeftPercent / 100.0));
+  const rightTrim = Math.floor(cropW * (settings.manualTrimRightPercent / 100.0));
+  const topTrim = Math.floor(cropH * (settings.manualTrimTopPercent / 100.0));
+  const bottomTrim = Math.floor(cropH * (settings.manualTrimBottomPercent / 100.0));
+
+  x0 = Math.min(Math.max(0, x0 + leftTrim), width - 1);
+  x1 = Math.max(Math.min(width, x1 - rightTrim), x0 + 1);
+  y0 = Math.min(Math.max(0, y0 + topTrim), height - 1);
+  y1 = Math.max(Math.min(height, y1 - bottomTrim), y0 + 1);
+
+  return { x0, y0, x1, y1 };
 };
