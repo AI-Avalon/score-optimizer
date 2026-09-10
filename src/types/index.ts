@@ -46,6 +46,18 @@ export type ScorePage = {
   isSpread: boolean;
   /** 見開き分割を行わずスキップするか（表紙・単ページ用） */
   skipSplit: boolean;
+  /** ページ種別 */
+  pageType: 'single' | 'spread';
+  /** 分割されたサブページ位置 */
+  subPage: 'single' | 'left' | 'right';
+  /** カラーモード */
+  colorMode: ColorMode;
+  /** 二値化設定 */
+  binarizeConfig: BinarizeConfig;
+  /** 個別余白設定（ミリ単位） */
+  bidiMargins: BidiMarginConfig;
+  /** 全体設定から個別に上書きされているか */
+  isCustomized: boolean;
   /** 白紙ページか */
   isBlank: boolean;
   /** ノド影マスク左側幅（mm, 0-30） */
@@ -105,12 +117,23 @@ export type ExportConfig = {
   pageNumberPosition: 'top' | 'bottom';
 };
 
-/** マージン設定（mm） */
-export type MarginConfig = {
-  top: number;
-  bottom: number;
-  left: number;
-  right: number;
+/** カラーモード */
+export type ColorMode = 'color' | 'grayscale' | 'monochrome';
+
+/** 二値化設定 */
+export type BinarizeConfig = {
+  /** 二値化閾値 (0-255) */
+  threshold: number;
+  /** 裏写り除去（明るいピクセルを白に飛ばす） */
+  removeBleedThrough: boolean;
+};
+
+/** ミリ単位の余白調整（見開き対応） */
+export type BidiMarginConfig = {
+  topMm: number;
+  bottomMm: number;
+  insideMm: number;
+  outsideMm: number;
 };
 
 /** 全体設定 */
@@ -122,5 +145,5 @@ export type GlobalConfig = {
   /** 基準ページインデックス（globalStaffScaleLock時） */
   referencePageIndex: number;
   /** マージン設定 */
-  margins: MarginConfig;
+  margins: BidiMarginConfig;
 };

@@ -1,6 +1,5 @@
-import { useStore } from '../../store';
+import { useStore } from '../../store/useScoreStore';
 import { PAPER_PRESETS } from '../../types';
-import type { MarginConfig } from '../../types';
 
 export const LeftPanel = () => {
   const {
@@ -11,12 +10,6 @@ export const LeftPanel = () => {
     viewMode,
     setViewMode,
   } = useStore();
-
-  const handleMarginChange = (key: keyof MarginConfig, value: number) => {
-    setGlobalConfig({
-      margins: { ...globalConfig.margins, [key]: value },
-    });
-  };
 
   return (
     <div className="w-56 bg-slate-panel border-r border-slate-border flex flex-col overflow-y-auto text-xs shrink-0">
@@ -59,22 +52,64 @@ export const LeftPanel = () => {
         </select>
       </div>
 
-      {/* マージン設定 */}
+      {/* マージン設定（見開き対応） */}
       <div className="p-3 border-b border-slate-border">
-        <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Margins (mm)</div>
-        {(['top', 'bottom', 'left', 'right'] as const).map((side) => (
-          <div key={side} className="flex items-center justify-between mb-1">
-            <span className="text-gray-400 w-12 capitalize">{side}</span>
-            <input
-              type="number"
-              min={0}
-              max={50}
-              value={globalConfig.margins[side]}
-              onChange={(e) => handleMarginChange(side, Number(e.target.value))}
-              className="w-16 bg-slate-base text-white text-xs p-1 rounded border border-slate-border text-right"
-            />
-          </div>
-        ))}
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-[10px] text-gray-500 uppercase tracking-wider">Margins (mm)</div>
+          <button
+            onClick={() => useStore.getState().applyGlobalToAll()}
+            className="text-[10px] text-blue-400 hover:text-blue-300"
+            title="全ページに適用"
+          >
+            一括適用
+          </button>
+        </div>
+        
+        <div className="grid grid-cols-2 gap-2">
+          {(['topMm', 'bottomMm', 'insideMm', 'outsideMm'] as const).map((side) => {
+            const labelMap = { topMm: '上(天)', bottomMm: '下(地)', insideMm: '内(ノド)', outsideMm: '外(小口)' };
+            return (
+              <div key={side} className="flex flex-col mb-1">
+                <span className="text-gray-400 text-[10px] mb-1">{labelMap[side]}</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={50}
+                  value={globalConfig.margins[side as keyof typeof globalConfig.margins] || 0}
+                  onChange={(e) => {
+                    const m = { ...globalConfig.margins, [side]: Number(e.target.value) };
+                    setGlobalConfig({ margins: m as any });
+                  }}
+                  className="w-full bg-slate-base text-white text-xs p-1.5 rounded border border-slate-border text-center"
+                />
+              </div>
+            );
+          })}
+        </div>
+        <div className="mt-2 flex gap-1">
+          <button onClick={() => useStore.getState().applyGlobalToOdd()} className="flex-1 py-1 bg-slate-base hover:bg-slate-panel rounded text-[10px] text-gray-300">
+            奇数のみ適用
+          </button>
+          <button onClick={() => useStore.getState().applyGlobalToEven()} className="flex-1 py-1 bg-slate-base hover:bg-slate-panel rounded text-[10px] text-gray-300">
+            偶数のみ適用
+          </button>
+        </div>
+      </div>
+
+      {/* 一括回転 */}
+      <div className="p-3 border-b border-slate-border">
+        <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Batch Rotation</div>
+        <div className="flex flex-col gap-1">
+          <button onClick={() => useStore.getState().rotateAllPages(90)} className="w-full py-1.5 bg-slate-base hover:bg-slate-panel rounded text-xs text-gray-300">
+            全ページ 90° 回転
+          </button>
+          <button onClick={() => useStore.getState().rotateOddPages(180)} className="w-full py-1.5 bg-slate-base hover:bg-slate-panel rounded text-xs text-gray-300">
+            奇数ページのみ 180°
+          </button>
+          <button onClick={() => useStore.getState().rotateEvenPages(180)} className="w-full py-1.5 bg-slate-base hover:bg-slate-panel rounded text-xs text-gray-300">
+            偶数ページのみ 180°
+          </button>
+        </div>
       </div>
 
       {/* グローバル設定 */}

@@ -1,43 +1,15 @@
-import type { ScorePage, PaperPreset, MarginConfig } from './types';
+import type { ScorePage, PaperPreset, BidiMarginConfig } from '../types';
+import { mmToPx, fitAspectRatio, getEffectiveMargins, PRINT_DPI, PDF_DPI } from './geometry';
+import { applyImageFilter } from './filterEngine';
 
-/** 定数: 印刷DPI */
-export const PRINT_DPI = 300;
-/** mm→インチ変換係数 */
-const MM_PER_INCH = 25.4;
-/** PDF標準DPI */
-const PDF_DPI = 72;
+export * from './geometry';
+export * from './filterEngine';
+export * from './pdfEngine';
+
 /** 印刷品質エクスポート時のスケール */
 export const EXPORT_SCALE = PRINT_DPI / PDF_DPI; // ~4.167
 /** プレビュー表示用スケール */
 export const PREVIEW_SCALE = 0.2;
-
-/** mm値をピクセルに変換（指定スケール適用） */
-export const mmToPx = (mm: number, scale = 1.0): number =>
-  Math.round((mm / MM_PER_INCH) * PRINT_DPI * scale);
-
-/**
- * アスペクト比を保持したまま、ソース矩形を描画先矩形にフィットさせる計算
- */
-const fitAspectRatio = (
-  srcW: number,
-  srcH: number,
-  dstW: number,
-  dstH: number
-): { w: number; h: number; x: number; y: number } => {
-  const srcAspect = srcW / srcH;
-  const dstAspect = dstW / dstH;
-  let w: number, h: number;
-  if (srcAspect > dstAspect) {
-    // ソースのほうが横長 → 幅に合わせる
-    w = dstW;
-    h = dstW / srcAspect;
-  } else {
-    // ソースのほうが縦長 → 高さに合わせる
-    h = dstH;
-    w = dstH * srcAspect;
-  }
-  return { w, h, x: (dstW - w) / 2, y: (dstH - h) / 2 };
-};
 
 /**
  * 1ページ分をキャンバスにレンダリングする。
@@ -46,16 +18,18 @@ const fitAspectRatio = (
  * @param preset - 出力用紙プリセット
  * @param side - 見開き分割時の左右指定、またはsingle
  * @param scale - レンダリングスケール（プレビュー=0.2, エクスポート=300/72）
- * @param margins - マージン設定
+ * @param margins - マージン設定 (BidiMarginConfig)
  * @param accordionMode - 蛇腹製本モード
+ * @param pageIndex - ページインデックス（偶数/奇数の判定用、0始まりを想定）
  */
 export const renderPage = async (
   page: ScorePage,
   preset: PaperPreset,
   side: 'left' | 'right' | 'single',
   scale: number,
-  margins: MarginConfig,
-  accordionMode: boolean
+  margins: BidiMarginConfig,
+  accordionMode: boolean,
+  pageIndex: number = 0
 ): Promise<HTMLCanvasElement> => {
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
@@ -80,9 +54,18 @@ export const renderPage = async (
   const img = await loadImage(page.imageUrl);
 
   // マージン領域を計算
-  const effectiveMargins = accordionMode
-    ? { top: margins.top, bottom: margins.bottom, left: margins.left, right: margins.right }
-    : margins;
+  // pageIndex % 2 === 1 を偶数ページ(左ページ)として扱うか、
+  // pageIndex % 2 === 0 を右ページ(奇数ページ)として扱うか
+  // ここでは "Odd pages have inside=left, outside=right. Even pages have inside=right, outside=left." に従う。
+  // pageIndex=0 (1ページ目) -> 奇数ページ -> isLeftPage = false
+  // pageIndex=1 (2ページ目) -> 偶数ページ -> isLeftPage = true
+  const isLeftPage = pageIndex % 2 !== 0;
+
+  // page.bidiMarginsがあれば優先、なければ全体設定のmarginsを使用
+  const effectiveMarginConfig = page.isCustomized ? page.bidiMargins : margins;
+
+  const effectiveMargins = getEffectiveMargins(effectiveMarginConfig, isLeftPage, accordionMode);
+  
   const marginLeft = mmToPx(effectiveMargins.left, scale);
   const marginRight = mmToPx(effectiveMargins.right, scale);
   const marginTop = mmToPx(effectiveMargins.top, scale);
@@ -191,7 +174,7 @@ export const renderPage = async (
   }
 
   // ホワイト修正テープ（WhiteoutRect）の適用
-  if (page.whiteoutRects.length > 0) {
+  if (page.whiteoutRects && page.whiteoutRects.length > 0) {
     ctx.fillStyle = '#ffffff';
     // WhiteoutRectの座標はフィット後の描画領域にマッピング
     const scaleX = fit.w / srcW;
@@ -205,6 +188,9 @@ export const renderPage = async (
     }
   }
 
+  // 画像フィルター処理の適用
+  applyImageFilter(ctx, paperW, paperH, page.colorMode, page.binarizeConfig);
+
   // 傾き補正のrestore
   if (page.deskew) {
     ctx.restore();
@@ -214,7 +200,7 @@ export const renderPage = async (
 };
 
 /** 画像ロードのPromiseラッパー */
-const loadImage = (src: string): Promise<HTMLImageElement> =>
+export const loadImage = (src: string): Promise<HTMLImageElement> =>
   new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = 'Anonymous';
@@ -222,18 +208,3 @@ const loadImage = (src: string): Promise<HTMLImageElement> =>
     img.onerror = () => reject(new Error('画像の読み込みに失敗'));
     img.src = src;
   });
-
-/**
- * 2点クリックから傾き角度を算出する（水平補正用）
- * θ = atan2(Δy, Δx)
- */
-export const calcDeskewAngle = (
-  x1: number,
-  y1: number,
-  x2: number,
-  y2: number
-): { angleRad: number; angleDeg: number } => {
-  const angleRad = Math.atan2(y2 - y1, x2 - x1);
-  const angleDeg = (angleRad * 180) / Math.PI;
-  return { angleRad, angleDeg };
-};

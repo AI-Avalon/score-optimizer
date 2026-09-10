@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
-import { useStore } from '../../store';
+import { useStore } from '../../store/useScoreStore';
 import { renderPage, PREVIEW_SCALE, calcDeskewAngle } from '../../engine';
 
 export const CanvasViewer = () => {

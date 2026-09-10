@@ -1,7 +1,7 @@
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.js?url';
 import type { ScorePage } from './types';
-import { genId } from './store';
+import { genId } from './store/useScoreStore';
 
 /** pdf.jsのワーカーを設定 */
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -50,6 +50,12 @@ export const importPdf = async (
         isSpread,
         skipSplit: false,
         isBlank: false,
+      pageType: 'single',
+      subPage: 'single',
+      colorMode: 'color',
+      binarizeConfig: { threshold: 128, removeBleedThrough: false },
+      bidiMargins: { topMm: 5, bottomMm: 5, insideMm: 5, outsideMm: 5 },
+      isCustomized: false,
         gutterMaskLeftMm: 0,
         gutterMaskRightMm: 0,
         spineRatio: 0.5,

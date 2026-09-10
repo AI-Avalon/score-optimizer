@@ -1,5 +1,5 @@
 import type { ScorePage } from './types';
-import { genId } from './store';
+import { genId } from './store/useScoreStore';
 
 /**
  * テスト用ダミー楽譜を生成する。
@@ -156,6 +156,12 @@ export const createMockScore = async (): Promise<ScorePage> => {
       isSpread: true,
       skipSplit: false,
       isBlank: false,
+      pageType: 'single',
+      subPage: 'single',
+      colorMode: 'color',
+      binarizeConfig: { threshold: 128, removeBleedThrough: false },
+      bidiMargins: { topMm: 5, bottomMm: 5, insideMm: 5, outsideMm: 5 },
+      isCustomized: false,
       gutterMaskLeftMm: 8,
       gutterMaskRightMm: 8,
       spineRatio: 0.5,

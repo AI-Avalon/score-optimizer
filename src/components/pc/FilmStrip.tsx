@@ -1,4 +1,4 @@
-import { useStore } from '../../store';
+import { useStore } from '../../store/useScoreStore';
 
 export const FilmStrip = () => {
   const { pages, selectedPageId, selectPage, removePage, insertBlankPage } = useStore();

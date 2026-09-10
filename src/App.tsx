@@ -1,7 +1,7 @@
 import { Header } from './components/Header';
 import { PCWorkspace } from './components/pc/PCWorkspace';
 import { MobileWorkspace } from './components/mobile/MobileWorkspace';
-import { useStore } from './store';
+import { useStore } from './store/useScoreStore';
 import { useEffect } from 'react';
 
 export const App = () => {
@@ -25,6 +25,20 @@ export const App = () => {
         e.preventDefault();
         redo();
       }
+      // ページ切替ショートカット (矢印キー)
+      if (!e.metaKey && !e.ctrlKey) {
+        if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          const idx = pages.findIndex(p => p.id === selectedPageId);
+          if (idx > 0) useStore.getState().selectPage(pages[idx - 1].id);
+        }
+        if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          const idx = pages.findIndex(p => p.id === selectedPageId);
+          if (idx !== -1 && idx < pages.length - 1) useStore.getState().selectPage(pages[idx + 1].id);
+        }
+      }
+
       // 回転ショートカット
       if (selectedPageId && !e.metaKey && !e.ctrlKey) {
         const page = pages.find(p => p.id === selectedPageId);

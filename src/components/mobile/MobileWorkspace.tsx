@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
-import { useStore } from '../../store';
+import { useStore } from '../../store/useScoreStore';
 import { renderPage } from '../../engine';
 import { PAPER_PRESETS } from '../../types';
 import { ProgressOverlay } from '../ProgressOverlay';
+import { ImportWizard } from '../ImportWizard';
 
 export const MobileWorkspace = () => {
   const {
@@ -93,6 +94,8 @@ export const MobileWorkspace = () => {
   return (
     <div className="flex flex-col flex-1 overflow-hidden relative">
       <input type="file" accept="application/pdf,image/*" ref={fileInputRef} className="hidden" onChange={handleImportPdf} />
+      
+      <ImportWizard />
 
       {/* キャンバスエリア */}
       <div

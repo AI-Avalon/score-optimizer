@@ -1,4 +1,4 @@
-import { useStore } from '../../store';
+import { useStore } from '../../store/useScoreStore';
 import type { ExportConfig } from '../../types';
 
 export const RightPanel = () => {
@@ -137,6 +137,92 @@ export const RightPanel = () => {
               </button>
             </div>
           )}
+
+          {/* 色調・画質パネル */}
+          <div className="mt-4 pt-4 border-t border-slate-border">
+            <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Image Filter</div>
+            <div className="flex gap-1 mb-2">
+              {(['color', 'grayscale', 'monochrome'] as const).map(mode => (
+                <button
+                  key={mode}
+                  onClick={() => updatePage(selectedPage.id, { colorMode: mode })}
+                  className={`flex-1 py-1 rounded text-[10px] transition-colors ${
+                    selectedPage.colorMode === mode
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-slate-base text-gray-400 hover:bg-slate-panel'
+                  }`}
+                >
+                  {mode === 'color' ? 'カラー' : mode === 'grayscale' ? 'グレー' : '二値化'}
+                </button>
+              ))}
+            </div>
+            
+            {selectedPage.colorMode === 'monochrome' && selectedPage.binarizeConfig && (
+              <div className="bg-slate-base p-2 rounded border border-slate-border">
+                <div className="mb-2">
+                  <div className="flex justify-between text-[10px] text-gray-400 mb-1">
+                    <span>閾値 (Threshold)</span>
+                    <span>{selectedPage.binarizeConfig.threshold}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={255}
+                    value={selectedPage.binarizeConfig.threshold}
+                    onChange={(e) =>
+                      updatePage(selectedPage.id, {
+                        binarizeConfig: { ...selectedPage.binarizeConfig, threshold: Number(e.target.value) }
+                      })
+                    }
+                    className="w-full accent-blue-500"
+                  />
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer text-[10px]">
+                  <input
+                    type="checkbox"
+                    checked={selectedPage.binarizeConfig.removeBleedThrough}
+                    onChange={(e) =>
+                      updatePage(selectedPage.id, {
+                        binarizeConfig: { ...selectedPage.binarizeConfig, removeBleedThrough: e.target.checked }
+                      })
+                    }
+                    className="accent-blue-500"
+                  />
+                  <span className="text-gray-300">裏写り除去（ハイライト飛ばし）</span>
+                </label>
+              </div>
+            )}
+          </div>
+
+          {/* 個別マージン設定 */}
+          <div className="mt-4 pt-4 border-t border-slate-border">
+            <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2 flex justify-between">
+              <span>Page Margins</span>
+              {selectedPage.isCustomized && <span className="text-orange-400">個別設定中</span>}
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {(['topMm', 'bottomMm', 'insideMm', 'outsideMm'] as const).map((side) => {
+                const labelMap = { topMm: '上', bottomMm: '下', insideMm: '内', outsideMm: '外' };
+                const val = selectedPage.bidiMargins?.[side] ?? 0;
+                return (
+                  <div key={side} className="flex flex-col mb-1">
+                    <span className="text-gray-400 text-[10px] mb-1">{labelMap[side]}</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={50}
+                      value={val}
+                      onChange={(e) => {
+                        const m = { ...selectedPage.bidiMargins, [side]: Number(e.target.value) };
+                        updatePage(selectedPage.id, { bidiMargins: m as any, isCustomized: true });
+                      }}
+                      className="w-full bg-slate-base text-white text-xs p-1.5 rounded border border-slate-border text-center"
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
       )}
 

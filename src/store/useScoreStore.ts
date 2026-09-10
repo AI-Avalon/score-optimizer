@@ -5,8 +5,8 @@ import type {
   ViewMode,
   ExportConfig,
   GlobalConfig,
-} from './types';
-import { PAPER_PRESETS } from './types';
+} from '../types/index';
+import { PAPER_PRESETS } from '../types/index';
 
 /** Undo/Redo用の履歴エントリ */
 interface HistoryEntry {
@@ -71,6 +71,17 @@ interface StoreState {
   redo: () => void;
   /** 現在のページ状態を履歴にプッシュ */
   pushHistory: () => void;
+
+  initWizard: (mode: 'all-spread' | 'all-single' | 'cover-then-spread') => void;
+  applyGlobalToAll: () => void;
+  applyGlobalToOdd: () => void;
+  applyGlobalToEven: () => void;
+  applyCurrentToAll: (pageId: string) => void;
+  applyCurrentToFollowing: (pageId: string) => void;
+  rotateCurrentPage: (id: string, deg: 90 | 180 | 270) => void;
+  rotateOddPages: (deg: 90 | 180 | 270) => void;
+  rotateEvenPages: (deg: 90 | 180 | 270) => void;
+  rotateAllPages: (deg: 90 | 180 | 270) => void;
 }
 
 /** 一意IDを生成 */
@@ -89,6 +100,12 @@ const createBlankPage = (): ScorePage => ({
   isSpread: false,
   skipSplit: true,
   isBlank: true,
+  pageType: 'single',
+  subPage: 'single',
+  colorMode: 'color',
+  binarizeConfig: { threshold: 128, removeBleedThrough: false },
+  bidiMargins: { topMm: 5, bottomMm: 5, insideMm: 5, outsideMm: 5 },
+  isCustomized: false,
   gutterMaskLeftMm: 0,
   gutterMaskRightMm: 0,
   spineRatio: 0.5,
@@ -119,7 +136,7 @@ export const useStore = create<StoreState>((set, get) => ({
     accordionBindingMode: false,
     globalStaffScaleLock: false,
     referencePageIndex: 0,
-    margins: { top: 5, bottom: 5, left: 5, right: 5 },
+    margins: { topMm: 5, bottomMm: 5, insideMm: 5, outsideMm: 5 },
   },
   undoStack: [],
   redoStack: [],
@@ -224,5 +241,124 @@ export const useStore = create<StoreState>((set, get) => ({
     const newStack = [...undoStack, { pages }];
     if (newStack.length > MAX_HISTORY) newStack.shift();
     set({ undoStack: newStack, redoStack: [] });
+  },
+
+  initWizard: (mode) => {
+    const state = get();
+    state.pushHistory();
+    set({
+      pages: state.pages.map((p, i) => {
+        if (mode === 'all-spread') {
+          return { ...p, pageType: 'spread', isSpread: true, skipSplit: false };
+        } else if (mode === 'all-single') {
+          return { ...p, pageType: 'single', isSpread: false, skipSplit: true };
+        } else if (mode === 'cover-then-spread') {
+          if (i === 0) {
+            return { ...p, pageType: 'single', isSpread: false, skipSplit: true };
+          } else {
+            return { ...p, pageType: 'spread', isSpread: true, skipSplit: false };
+          }
+        }
+        return p;
+      })
+    });
+  },
+
+  applyGlobalToAll: () => {
+    const state = get();
+    state.pushHistory();
+    const { margins } = state.globalConfig;
+    set({
+      pages: state.pages.map(p => ({
+        ...p,
+        bidiMargins: { ...margins },
+        isCustomized: false
+      }))
+    });
+  },
+
+  applyGlobalToOdd: () => {
+    const state = get();
+    state.pushHistory();
+    const { margins } = state.globalConfig;
+    set({
+      pages: state.pages.map((p, i) => i % 2 === 0 ? { ...p, bidiMargins: { ...margins }, isCustomized: false } : p)
+    });
+  },
+
+  applyGlobalToEven: () => {
+    const state = get();
+    state.pushHistory();
+    const { margins } = state.globalConfig;
+    set({
+      pages: state.pages.map((p, i) => i % 2 === 1 ? { ...p, bidiMargins: { ...margins }, isCustomized: false } : p)
+    });
+  },
+
+  applyCurrentToAll: (pageId) => {
+    const state = get();
+    state.pushHistory();
+    const current = state.pages.find(p => p.id === pageId);
+    if (!current) return;
+    set({
+      pages: state.pages.map(p => ({
+        ...p,
+        colorMode: current.colorMode,
+        binarizeConfig: { ...current.binarizeConfig },
+        bidiMargins: { ...current.bidiMargins },
+        gutterMaskLeftMm: current.gutterMaskLeftMm,
+        gutterMaskRightMm: current.gutterMaskRightMm,
+      }))
+    });
+  },
+
+  applyCurrentToFollowing: (pageId) => {
+    const state = get();
+    state.pushHistory();
+    const currentIndex = state.pages.findIndex(p => p.id === pageId);
+    if (currentIndex === -1) return;
+    const current = state.pages[currentIndex];
+    set({
+      pages: state.pages.map((p, i) => i >= currentIndex ? {
+        ...p,
+        colorMode: current.colorMode,
+        binarizeConfig: { ...current.binarizeConfig },
+        bidiMargins: { ...current.bidiMargins },
+        gutterMaskLeftMm: current.gutterMaskLeftMm,
+        gutterMaskRightMm: current.gutterMaskRightMm,
+      } : p)
+    });
+  },
+
+  rotateCurrentPage: (id, deg) => {
+    const state = get();
+    state.pushHistory();
+    set({
+      pages: state.pages.map(p => p.id === id ? { ...p, rotation: ((p.rotation + deg) % 360) as 0 | 90 | 180 | 270 } : p)
+    });
+  },
+
+  rotateOddPages: (deg) => {
+    const state = get();
+    state.pushHistory();
+    set({
+      pages: state.pages.map((p, i) => i % 2 === 0 ? { ...p, rotation: ((p.rotation + deg) % 360) as 0 | 90 | 180 | 270 } : p)
+    });
+  },
+
+  rotateEvenPages: (deg) => {
+    const state = get();
+    state.pushHistory();
+    set({
+      pages: state.pages.map((p, i) => i % 2 === 1 ? { ...p, rotation: ((p.rotation + deg) % 360) as 0 | 90 | 180 | 270 } : p)
+    });
+  },
+
+  rotateAllPages: (deg) => {
+    const state = get();
+    state.pushHistory();
+    set({
+      pages: state.pages.map(p => ({ ...p, rotation: ((p.rotation + deg) % 360) as 0 | 90 | 180 | 270 }))
+    });
   },
 }));

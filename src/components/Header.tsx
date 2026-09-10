@@ -1,4 +1,4 @@
-import { useStore } from '../store';
+import { useStore } from '../store/useScoreStore';
 import { createMockScore } from '../mockGenerator';
 import { useRef } from 'react';
 
