@@ -1,6 +1,6 @@
-import { jsPDF } from 'jspdf';
+import { PDFDocument } from 'pdf-lib';
 import type { ScorePage, PaperPreset, ExportConfig, GlobalConfig } from '../types';
-import { renderPage, EXPORT_SCALE } from './index';
+import { renderPage } from './index';
 
 /**
  * ページ一覧を300DPI品質のPDFとして書き出す。
@@ -21,11 +21,8 @@ export const exportToPdf = async (
 ): Promise<void> => {
   if (pages.length === 0) return;
 
-  const doc = new jsPDF({
-    orientation: preset.widthMm > preset.heightMm ? 'landscape' : 'portrait',
-    unit: 'mm',
-    format: [preset.widthMm, preset.heightMm],
-  });
+  const pdfDoc = await PDFDocument.create();
+  const scale = 300 / 72;
 
   /** 出力ページ展開: 見開きは左右に分割 */
   interface OutputEntry {
@@ -36,7 +33,7 @@ export const exportToPdf = async (
   for (const page of pages) {
     if (page.isBlank) {
       outputEntries.push({ page, side: 'single' });
-    } else if (page.isSpread && !page.skipSplit) {
+    } else if (page.pageType === 'spread') {
       outputEntries.push({ page, side: 'left' });
       outputEntries.push({ page, side: 'right' });
     } else {
@@ -45,14 +42,13 @@ export const exportToPdf = async (
   }
 
   for (let i = 0; i < outputEntries.length; i++) {
-    if (i > 0) doc.addPage();
     const { page, side } = outputEntries[i];
 
     const canvas = await renderPage(
       page,
       preset,
       side,
-      EXPORT_SCALE,
+      scale,
       globalConfig.margins,
       globalConfig.accordionBindingMode,
       i // pageIndex 
@@ -63,7 +59,7 @@ export const exportToPdf = async (
       const pageNum = exportConfig.pageNumberStart + i;
       const ctx = canvas.getContext('2d');
       if (ctx) {
-        const fontSize = exportConfig.pageNumberSizePt * (EXPORT_SCALE / 1);
+        const fontSize = exportConfig.pageNumberSizePt * scale;
         ctx.fillStyle = '#000000';
         ctx.font = `${fontSize}px serif`;
         const text = String(pageNum);
@@ -76,8 +72,23 @@ export const exportToPdf = async (
       }
     }
 
-    const imgData = canvas.toDataURL('image/jpeg', 0.92);
-    doc.addImage(imgData, 'JPEG', 0, 0, preset.widthMm, preset.heightMm);
+    const imgDataUrl = canvas.toDataURL('image/jpeg', 0.92);
+    const base64Data = imgDataUrl.split(',')[1];
+    const img = await pdfDoc.embedJpg(base64Data);
+
+    const widthPt = (preset.widthMm / 25.4) * 72;
+    const heightPt = (preset.heightMm / 25.4) * 72;
+    
+    const pdfPage = pdfDoc.addPage([widthPt, heightPt]);
+
+    // pdf-lib's drawImage origin (0,0) is bottom-left. 
+    // To fill the page, we just set width and height and draw at 0,0.
+    pdfPage.drawImage(img, {
+      x: 0,
+      y: 0,
+      width: widthPt,
+      height: heightPt,
+    });
 
     // メモリ即時解放
     canvas.width = 0;
@@ -88,9 +99,17 @@ export const exportToPdf = async (
     }
   }
 
-  // ファイル名生成
+  const pdfBytes = await pdfDoc.save();
   const filename = resolveFilename(exportConfig, preset);
-  doc.save(filename);
+  
+  // ブラウザでダウンロード
+  const blob = new Blob([pdfBytes as any], { type: 'application/pdf' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 };
 
 /** エクスポート設定からファイル名を解決 */

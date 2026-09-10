@@ -40,7 +40,7 @@ export const MobileWorkspace = () => {
 
       for (const page of pagesToRender) {
         if (cancelled) return;
-        if (page.isSpread && !page.skipSplit && !page.isBlank) {
+        if (page.pageType === 'spread' && !page.isBlank) {
           for (const side of ['left', 'right'] as const) {
             const c = await renderPage(
               page, paperPreset, side, 0.3,
@@ -184,19 +184,12 @@ export const MobileWorkspace = () => {
                 <div className="mb-4 p-3 bg-slate-base rounded border border-slate-border">
                   <div className="text-[10px] text-gray-500 uppercase mb-2">選択ページ設定</div>
                   <label className="flex items-center gap-2 mb-2 text-xs">
-                    <input type="checkbox" checked={selectedPage.isSpread}
-                      onChange={(e) => updatePage(selectedPage.id, { isSpread: e.target.checked })}
+                    <input type="checkbox" checked={selectedPage.pageType === 'spread'}
+                      onChange={(e) => updatePage(selectedPage.id, { pageType: e.target.checked ? 'spread' : 'single' })}
                       className="accent-blue-500" />
                     見開きスキャン
                   </label>
-                  {selectedPage.isSpread && (
-                    <label className="flex items-center gap-2 mb-2 text-xs">
-                      <input type="checkbox" checked={selectedPage.skipSplit}
-                        onChange={(e) => updatePage(selectedPage.id, { skipSplit: e.target.checked })}
-                        className="accent-blue-500" />
-                      分割スキップ
-                    </label>
-                  )}
+                  
                   <div className="mb-2">
                     <div className="flex justify-between text-[10px] text-gray-400">
                       <span>ノド影L</span><span>{selectedPage.gutterMaskLeftMm}mm</span>

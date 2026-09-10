@@ -1,18 +1,10 @@
 import { useStore } from '../store/useScoreStore';
-import { createMockScore } from '../mockGenerator';
 import { useRef } from 'react';
+import { HelpModal } from './HelpModal';
 
 export const Header = () => {
-  const { addPage, addPages, setExportConfig, setProcessing, isMobile } = useStore();
+  const { addPages, setExportConfig, setProcessing, isMobile } = useStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  /** サンプルスコア生成 */
-  const handleGenerateMock = async () => {
-    setProcessing(true, 0);
-    const page = await createMockScore();
-    addPage(page);
-    setProcessing(false);
-  };
 
   /** PDFインポート */
   const handleImportPdf = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -46,12 +38,7 @@ export const Header = () => {
         >
           {isMobile ? '📂' : '📂 PDFを読み込み'}
         </button>
-        <button
-          onClick={handleGenerateMock}
-          className="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 rounded transition-colors"
-        >
-          {isMobile ? '🎼' : '🎼 サンプルスコア生成'}
-        </button>
+        <HelpModal />
       </div>
     </header>
   );

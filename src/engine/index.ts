@@ -95,7 +95,7 @@ export const renderPage = async (
   let srcW = effectiveImgW;
   let srcH = effectiveImgH;
 
-  if (page.isSpread && !page.skipSplit && side !== 'single') {
+  if (page.pageType === 'spread' && side !== 'single') {
     const splitPx = Math.round(effectiveImgW * page.spineRatio);
     if (side === 'left') {
       srcX = 0;
@@ -122,13 +122,13 @@ export const renderPage = async (
     // 回転後のソース矩形を元画像座標系で計算
     if (page.rotation === 90 || page.rotation === 270) {
       // 元画像のW/Hは回転前の値を使う
-      const origSplitPx = page.isSpread && !page.skipSplit
+      const origSplitPx = page.pageType === 'spread'
         ? Math.round(img.width * page.spineRatio)
         : 0;
-      if (side === 'left' && page.isSpread && !page.skipSplit) {
+      if (side === 'left' && page.pageType === 'spread') {
         ctx.drawImage(img, 0, 0, origSplitPx, img.height, 
           marginLeft + fit.x, marginTop + fit.y, fit.w, fit.h);
-      } else if (side === 'right' && page.isSpread && !page.skipSplit) {
+      } else if (side === 'right' && page.pageType === 'spread') {
         ctx.drawImage(img, origSplitPx, 0, img.width - origSplitPx, img.height,
           marginLeft + fit.x, marginTop + fit.y, fit.w, fit.h);
       } else {

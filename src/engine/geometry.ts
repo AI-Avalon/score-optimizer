@@ -83,3 +83,49 @@ export const getEffectiveMargins = (
     right: rightMm
   };
 };
+
+/**
+ * スキャナの黒枠などを無視するため、コンテンツ領域のバウンディングボックスを検出
+ */
+export const detectContentBBox = (
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  blackThreshold: number = 50
+): { x: number; y: number; w: number; h: number } => {
+  const imageData = ctx.getImageData(0, 0, width, height);
+  const data = imageData.data;
+  
+  let minX = width;
+  let minY = height;
+  let maxX = 0;
+  let maxY = 0;
+  
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+      const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+      
+      if (gray > blackThreshold) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+  
+  if (minX > maxX || minY > maxY) {
+    return { x: 0, y: 0, w: width, h: height };
+  }
+  
+  return {
+    x: minX,
+    y: minY,
+    w: maxX - minX + 1,
+    h: maxY - minY + 1
+  };
+};

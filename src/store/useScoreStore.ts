@@ -82,13 +82,13 @@ interface StoreState {
   rotateOddPages: (deg: 90 | 180 | 270) => void;
   rotateEvenPages: (deg: 90 | 180 | 270) => void;
   rotateAllPages: (deg: 90 | 180 | 270) => void;
+  deleteCurrentPage: () => void;
+  interleavePages: () => void;
 }
 
 /** 一意IDを生成 */
 const genId = (): string => {
-  const arr = new Uint8Array(8);
-  crypto.getRandomValues(arr);
-  return Array.from(arr, b => b.toString(16).padStart(2, '0')).join('');
+  return crypto.randomUUID();
 };
 
 /** 白紙ページを生成 */
@@ -97,8 +97,6 @@ const createBlankPage = (): ScorePage => ({
   imageUrl: null,
   originalWidth: 0,
   originalHeight: 0,
-  isSpread: false,
-  skipSplit: true,
   isBlank: true,
   pageType: 'single',
   subPage: 'single',
@@ -137,6 +135,9 @@ export const useStore = create<StoreState>((set, get) => ({
     globalStaffScaleLock: false,
     referencePageIndex: 0,
     margins: { topMm: 5, bottomMm: 5, insideMm: 5, outsideMm: 5 },
+    bodyStartPage: 2,
+    pageOrder: 'L2R',
+    frontMatterMode: 'single_fit',
   },
   undoStack: [],
   redoStack: [],
@@ -249,14 +250,14 @@ export const useStore = create<StoreState>((set, get) => ({
     set({
       pages: state.pages.map((p, i) => {
         if (mode === 'all-spread') {
-          return { ...p, pageType: 'spread', isSpread: true, skipSplit: false };
+          return { ...p, pageType: 'spread' };
         } else if (mode === 'all-single') {
-          return { ...p, pageType: 'single', isSpread: false, skipSplit: true };
+          return { ...p, pageType: 'single' };
         } else if (mode === 'cover-then-spread') {
           if (i === 0) {
-            return { ...p, pageType: 'single', isSpread: false, skipSplit: true };
+            return { ...p, pageType: 'single' };
           } else {
-            return { ...p, pageType: 'spread', isSpread: true, skipSplit: false };
+            return { ...p, pageType: 'spread' };
           }
         }
         return p;
@@ -360,5 +361,33 @@ export const useStore = create<StoreState>((set, get) => ({
     set({
       pages: state.pages.map(p => ({ ...p, rotation: ((p.rotation + deg) % 360) as 0 | 90 | 180 | 270 }))
     });
+  },
+
+  deleteCurrentPage: () => {
+    const state = get();
+    if (!state.selectedPageId) return;
+    state.pushHistory();
+    const filtered = state.pages.filter(p => p.id !== state.selectedPageId);
+    set({
+      pages: filtered,
+      selectedPageId: filtered.length > 0 ? filtered[0].id : null,
+    });
+  },
+
+  interleavePages: () => {
+    const state = get();
+    state.pushHistory();
+    const pages = state.pages;
+    const mid = Math.ceil(pages.length / 2);
+    const firstHalf = pages.slice(0, mid);
+    const secondHalf = pages.slice(mid).reverse();
+    
+    const newPages: ScorePage[] = [];
+    for (let i = 0; i < mid; i++) {
+      if (firstHalf[i]) newPages.push(firstHalf[i]);
+      if (secondHalf[i]) newPages.push(secondHalf[i]);
+    }
+
+    set({ pages: newPages });
   },
 }));

@@ -34,54 +34,40 @@ export const RightPanel = () => {
             Page Settings
           </div>
 
-          {/* 見開き分割 */}
-          <label className="flex items-center gap-2 mb-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={selectedPage.isSpread}
-              onChange={(e) =>
-                updatePage(selectedPage.id, { isSpread: e.target.checked })
-              }
-              className="accent-blue-500"
-            />
-            <span className="text-gray-300">見開きスキャン</span>
-          </label>
+          {/* ページ種別 (Single / Spread) */}
+          <div className="mb-4">
+            <div className="flex justify-between text-gray-400 mb-1">
+              <span>ページ種別</span>
+            </div>
+            <select
+              value={selectedPage.pageType}
+              onChange={(e) => updatePage(selectedPage.id, { pageType: e.target.value as 'single' | 'spread' })}
+              className="w-full bg-slate-base text-white text-xs p-1.5 rounded border border-slate-border"
+            >
+              <option value="single">単一ページ</option>
+              <option value="spread">見開き（自動分割）</option>
+            </select>
+          </div>
 
-          {selectedPage.isSpread && (
-            <>
-              <label className="flex items-center gap-2 mb-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={selectedPage.skipSplit}
-                  onChange={(e) =>
-                    updatePage(selectedPage.id, { skipSplit: e.target.checked })
-                  }
-                  className="accent-blue-500"
-                />
-                <span className="text-gray-300">分割スキップ（表紙等）</span>
-              </label>
-
-              {!selectedPage.skipSplit && (
-                <div className="mb-2">
-                  <div className="flex justify-between text-gray-400 mb-1">
-                    <span>分割位置</span>
-                    <span>{Math.round(selectedPage.spineRatio * 100)}%</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={10}
-                    max={90}
-                    value={Math.round(selectedPage.spineRatio * 100)}
-                    onChange={(e) =>
-                      updatePage(selectedPage.id, {
-                        spineRatio: Number(e.target.value) / 100,
-                      })
-                    }
-                    className="w-full accent-blue-500"
-                  />
-                </div>
-              )}
-            </>
+          {selectedPage.pageType === 'spread' && (
+            <div className="mb-2">
+              <div className="flex justify-between text-gray-400 mb-1">
+                <span>分割位置</span>
+                <span>{Math.round(selectedPage.spineRatio * 100)}%</span>
+              </div>
+              <input
+                type="range"
+                min={10}
+                max={90}
+                value={Math.round(selectedPage.spineRatio * 100)}
+                onChange={(e) =>
+                  updatePage(selectedPage.id, {
+                    spineRatio: Number(e.target.value) / 100,
+                  })
+                }
+                className="w-full accent-blue-500"
+              />
+            </div>
           )}
 
           {/* ノド影マスク */}

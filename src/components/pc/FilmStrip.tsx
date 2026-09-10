@@ -21,7 +21,7 @@ export const FilmStrip = () => {
           ) : (
             <span className="text-gray-400">{idx + 1}</span>
           )}
-          {page.isSpread && !page.skipSplit && (
+          {page.pageType === 'spread' && (
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="w-px h-full bg-red-500/50" />
             </div>

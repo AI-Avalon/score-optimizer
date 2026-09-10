@@ -112,6 +112,54 @@ export const LeftPanel = () => {
         </div>
       </div>
 
+      {/* 前付け・本文設定 */}
+      <div className="p-3 border-b border-slate-border">
+        <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Book Structure</div>
+        <div className="flex flex-col gap-2">
+          <div className="flex justify-between items-center">
+            <span className="text-gray-300">本文開始ページ</span>
+            <input
+              type="number"
+              min={1}
+              value={globalConfig.bodyStartPage || 2}
+              onChange={(e) => setGlobalConfig({ bodyStartPage: Number(e.target.value) })}
+              className="w-16 bg-slate-base text-white text-xs p-1 rounded border border-slate-border text-center"
+            />
+          </div>
+          
+          <div className="flex flex-col gap-1">
+            <span className="text-gray-300">表紙・前付けの扱い</span>
+            <select
+              value={globalConfig.frontMatterMode || 'single_fit'}
+              onChange={(e) => setGlobalConfig({ frontMatterMode: e.target.value as any })}
+              className="w-full bg-slate-base text-white text-xs p-1.5 rounded border border-slate-border"
+            >
+              <option value="single_fit">単ページ幅統一 (single_fit)</option>
+              <option value="spread_split">見開き分割 (spread_split)</option>
+              <option value="skip">スキップ (出力除外)</option>
+            </select>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <span className="text-gray-300">ページの進行方向</span>
+            <div className="flex gap-1">
+              <button
+                onClick={() => setGlobalConfig({ pageOrder: 'L2R' })}
+                className={`flex-1 py-1 rounded text-[10px] ${globalConfig.pageOrder === 'L2R' ? 'bg-blue-600 text-white' : 'bg-slate-base text-gray-400'}`}
+              >
+                左→右
+              </button>
+              <button
+                onClick={() => setGlobalConfig({ pageOrder: 'R2L' })}
+                className={`flex-1 py-1 rounded text-[10px] ${globalConfig.pageOrder === 'R2L' ? 'bg-blue-600 text-white' : 'bg-slate-base text-gray-400'}`}
+              >
+                右→左
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* グローバル設定 */}
       <div className="p-3">
         <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Global</div>
@@ -124,7 +172,7 @@ export const LeftPanel = () => {
           />
           <span className="text-gray-300">蛇腹製本モード</span>
         </label>
-        <label className="flex items-center gap-2 cursor-pointer">
+        <label className="flex items-center gap-2 mb-2 cursor-pointer">
           <input
             type="checkbox"
             checked={globalConfig.globalStaffScaleLock}
@@ -133,6 +181,13 @@ export const LeftPanel = () => {
           />
           <span className="text-gray-300">スケール統一</span>
         </label>
+        <button
+          onClick={() => useStore.getState().interleavePages && useStore.getState().interleavePages()}
+          className="w-full py-1.5 mt-2 bg-slate-base hover:bg-slate-panel rounded text-xs text-gray-300 border border-slate-border"
+          title="表面(1,3,5...)と裏面(...6,4,2)の束をソート結合"
+        >
+          🔄 両面スキャン結合 (Interleave)
+        </button>
       </div>
     </div>
   );

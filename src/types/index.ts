@@ -42,10 +42,6 @@ export type ScorePage = {
   originalWidth: number;
   /** 元画像の高さ（px） */
   originalHeight: number;
-  /** 見開きスキャンか（trueなら分割対象） */
-  isSpread: boolean;
-  /** 見開き分割を行わずスキップするか（表紙・単ページ用） */
-  skipSplit: boolean;
   /** ページ種別 */
   pageType: 'single' | 'spread';
   /** 分割されたサブページ位置 */
@@ -74,6 +70,8 @@ export type ScorePage = {
   deskew: DeskewData | null;
   /** 回転角度（0, 90, 180, 270） */
   rotation: 0 | 90 | 180 | 270;
+  /** トリミング範囲（px） */
+  cropBox?: { x: number; y: number; w: number; h: number };
 };
 
 /** 用紙プリセット */
@@ -126,6 +124,10 @@ export type BinarizeConfig = {
   threshold: number;
   /** 裏写り除去（明るいピクセルを白に飛ばす） */
   removeBleedThrough: boolean;
+  /** 適応的二値化を使用するか */
+  isAdaptive?: boolean;
+  /** 適応的二値化のブロックサイズ */
+  adaptiveBlockSize?: number;
 };
 
 /** ミリ単位の余白調整（見開き対応） */
@@ -135,6 +137,9 @@ export type BidiMarginConfig = {
   insideMm: number;
   outsideMm: number;
 };
+
+/** 表紙・前付けの処理モード */
+export type FrontMatterMode = 'single_fit' | 'spread_split' | 'skip';
 
 /** 全体設定 */
 export type GlobalConfig = {
@@ -146,4 +151,10 @@ export type GlobalConfig = {
   referencePageIndex: number;
   /** マージン設定 */
   margins: BidiMarginConfig;
+  /** 本文の開始ページ（見開き分割・ページ番号付与の起点） */
+  bodyStartPage: number;
+  /** ページの進行方向 */
+  pageOrder: 'L2R' | 'R2L';
+  /** 表紙・前付けの処理モード */
+  frontMatterMode: FrontMatterMode;
 };
