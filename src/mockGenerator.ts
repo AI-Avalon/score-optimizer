@@ -1,10 +1,9 @@
-import { Page } from './types';
+import type { Page } from './types';
 
 export const createMockScore = async (): Promise<Page> => {
   return new Promise((resolve) => {
     const canvas = document.createElement('canvas');
     // A3 Landscape for mockup (420 x 297 mm at 300DPI)
-    const scale = 300 / 72;
     const pxPerInch = 300;
     const width = Math.round((420 / 25.4) * pxPerInch);
     const height = Math.round((297 / 25.4) * pxPerInch);

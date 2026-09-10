@@ -1,4 +1,4 @@
-import { Page, Preset } from './types';
+import type { Page, Preset } from './types';
 
 export const DPI = 300;
 const MM_TO_INCH = 1 / 25.4;

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { Page, Preset, PRESETS } from './types';
+import type { Page, Preset } from './types';
+import { PRESETS } from './types';
 
 interface StoreState {
   pages: Page[];

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Page, Preset } from '../types';
+import type { Page, Preset } from '../types';
 import { renderPageToCanvas } from '../engine';
 
 interface Props {

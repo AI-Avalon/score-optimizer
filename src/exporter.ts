@@ -1,5 +1,5 @@
 import { jsPDF } from 'jspdf';
-import { Page, Preset } from './types';
+import type { Page, Preset } from './types';
 import { renderPageToCanvas } from './engine';
 
 export const exportToPdf = async (pages: Page[], preset: Preset) => {
