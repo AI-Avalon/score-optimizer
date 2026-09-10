@@ -42,7 +42,7 @@ export const RightPanel = () => {
   };
 
   return (
-    <div className="w-64 bg-slate-panel border-l border-slate-border flex flex-col overflow-y-auto text-xs shrink-0">
+    <div className="w-[340px] bg-[#161922] border-l border-[#272B35] flex flex-col overflow-y-auto text-xs shrink-0 z-20">
       <div className="p-3 border-b border-slate-border bg-slate-800">
         <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2 flex justify-between items-center">
           <span>Page Settings</span>

@@ -102,8 +102,10 @@ export const App = () => {
       try {
         setExportConfig({ originalFilename: file.name });
         const { importPdf } = await import('./pdfImporter');
-        const newPages = await importPdf(file, (p) => setProcessing(true, p));
-        addPages(newPages);
+        const result = await importPdf(file, (p) => setProcessing(true, p));
+        if (!result.cancelled) {
+          addPages(result.pages);
+        }
       } finally {
         setProcessing(false);
       }

@@ -39,14 +39,14 @@ export const FilmStrip = () => {
   if (pages.length === 0) return null;
 
   return (
-    <div className="h-48 bg-slate-panel border-t border-slate-border flex shrink-0 overflow-hidden">
-      <div className="flex-1 flex gap-2 p-3 overflow-x-auto">
+    <div className="h-48 bg-[#161922] border-t border-[#272B35] flex shrink-0 overflow-hidden z-20">
+      <div className="flex-1 flex gap-2 p-3 overflow-x-auto whitespace-nowrap hide-scrollbar">
         {pages.map((p, i) => (
           <div
             key={p.id}
             onClick={() => selectPage(p.id)}
-            className={`relative shrink-0 w-24 rounded border-2 cursor-pointer transition-colors ${
-              selectedPageId === p.id ? 'border-blue-500' : 'border-transparent hover:border-slate-border'
+            className={`relative inline-block shrink-0 w-24 rounded border-2 cursor-pointer transition-colors ${
+              selectedPageId === p.id ? 'border-blue-500' : 'border-transparent hover:border-[#272B35]'
             }`}
           >
             <div className="text-[9px] text-gray-500 absolute -top-4 left-0">Page {i + 1}</div>
@@ -62,7 +62,7 @@ export const FilmStrip = () => {
         ))}
       </div>
 
-      <div className="w-64 border-l border-slate-border p-2 bg-slate-800 flex flex-col">
+      <div className="w-64 border-l border-[#272B35] p-2 bg-[#0D0F12] flex flex-col">
         <div className="text-[10px] text-gray-400 mb-1">処理後プレビュー (現在ページ)</div>
         <div className="flex-1 flex gap-2">
           {processedPreviews.left ? (

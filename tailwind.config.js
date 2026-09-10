@@ -8,7 +8,7 @@ export default {
     extend: {
       colors: {
         slate: {
-          base: '#0B0D13',
+          base: '#0D0F12',
           panel: '#161922',
           border: '#272B35'
         }

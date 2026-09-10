@@ -12,7 +12,7 @@ export const LeftPanel = () => {
   } = useStore();
 
   return (
-    <div className="w-56 bg-slate-panel border-r border-slate-border flex flex-col overflow-y-auto text-xs shrink-0">
+    <div className="w-[340px] bg-[#161922] border-r border-[#272B35] flex flex-col overflow-y-auto text-xs shrink-0 z-20">
       {/* ビューモード切替 */}
       <div className="p-3 border-b border-slate-border">
         <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">View Mode</div>
