@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useLayoutEffect } from 'react';
 import { useStore } from '../../store/useScoreStore';
 import { computeCropRect } from '../../engine/cropEngine';
 import { toGray } from '../../engine/filterEngine';
@@ -31,6 +31,19 @@ export const CanvasStage = () => {
     startY: number;
     startSettings: any;
   } | null>(null);
+
+  const [containerSize, setContainerSize] = useState({ w: 0, h: 0 });
+
+  useLayoutEffect(() => {
+    if (!containerRef.current) return;
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setContainerSize({ w: entry.contentRect.width, h: entry.contentRect.height });
+      }
+    });
+    ro.observe(containerRef.current);
+    return () => ro.disconnect();
+  }, []);
 
   // 1. Generate lightweight preview asynchronously
   useEffect(() => {
@@ -100,12 +113,14 @@ export const CanvasStage = () => {
     const ctx = canvasRef.current.getContext('2d');
     if (!ctx) return;
     
-    const cw = containerRef.current.clientWidth;
-    const ch = containerRef.current.clientHeight;
+    const cw = containerSize.w || containerRef.current.clientWidth;
+    const ch = containerSize.h || containerRef.current.clientHeight;
     
     let drawScale = 1;
     if (scale === 'fit') {
-      drawScale = Math.min((cw - 40) / origW, (ch - 40) / origH);
+      const availW = Math.max(10, cw - 40);
+      const availH = Math.max(10, ch - 40);
+      drawScale = Math.max(0.01, Math.min(availW / origW, availH / origH));
     } else {
       drawScale = scale;
     }
@@ -174,7 +189,7 @@ export const CanvasStage = () => {
         ctx.strokeRect(px - hSize/2, py - hSize/2, hSize, hSize);
       });
     }
-  }, [selectedPage, scale, activeSettings, previewImage, activeTool]);
+  }, [selectedPage, scale, activeSettings, previewImage, activeTool, containerSize]);
 
   if (!selectedPage) {
     return <div className="flex-1 bg-[#0D0F12] flex items-center justify-center text-gray-500 text-sm">PDFを読み込んでください</div>;

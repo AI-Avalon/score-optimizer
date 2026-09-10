@@ -4,9 +4,15 @@ test.describe('楽譜ワークステーションの実機ブラウザ検証', ()
   test('デスクトップ環境での完全動作・コンソールエラー0件検証', async ({ page }) => {
     const consoleErrors: string[] = [];
     page.on('console', (msg) => {
-      if (msg.type() === 'error') consoleErrors.push(msg.text());
+      if (msg.type() === 'error') {
+        console.error('Browser Error:', msg.text());
+        consoleErrors.push(msg.text());
+      }
     });
-    page.on('pageerror', (err) => consoleErrors.push(err.message));
+    page.on('pageerror', (err) => {
+      console.error('Page Error:', err.message);
+      consoleErrors.push(err.message);
+    });
 
     await page.goto('/');
     await page.waitForLoadState('networkidle');

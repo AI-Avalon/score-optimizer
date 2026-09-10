@@ -1,16 +1,21 @@
 import * as pdfjsLib from 'pdfjs-dist';
 import type { PageData } from './types';
+import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.js?url';
 
 // Set worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 let currentRequestId = 0;
 
-export async function importPdf(file: File, onProgress: (progress: number) => void): Promise<{pages: PageData[], cancelled: boolean}> {
+export async function importPdf(
+  file: File, 
+  onProgress: (progress: number) => void,
+  onPageAdded: (page: PageData) => void
+): Promise<{cancelled: boolean}> {
   const reqId = ++currentRequestId;
   const arrayBuffer = await file.arrayBuffer();
   
-  if (reqId !== currentRequestId) return {pages: [], cancelled: true};
+  if (reqId !== currentRequestId) return {cancelled: true};
   
   const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
   let pdf: pdfjsLib.PDFDocumentProxy;
@@ -18,18 +23,17 @@ export async function importPdf(file: File, onProgress: (progress: number) => vo
     pdf = await loadingTask.promise;
   } catch (err: any) {
     if (err?.name === 'RenderingCancelledException') {
-      return {pages: [], cancelled: true};
+      return {cancelled: true};
     }
     throw err;
   }
 
-  const pages: PageData[] = [];
   const numPages = pdf.numPages;
 
   for (let i = 1; i <= numPages; i++) {
     if (reqId !== currentRequestId) {
       loadingTask.destroy();
-      return {pages: [], cancelled: true};
+      return {cancelled: true};
     }
     const page = await pdf.getPage(i);
     const viewport = page.getViewport({ scale: 1.5 }); // 108 DPI for preview
@@ -45,27 +49,29 @@ export async function importPdf(file: File, onProgress: (progress: number) => vo
     } catch (err: any) {
       if (err?.name === 'RenderingCancelledException') {
         loadingTask.destroy();
-        return {pages: [], cancelled: true};
+        return {cancelled: true};
       }
       throw err;
     }
 
     if (reqId !== currentRequestId) {
       loadingTask.destroy();
-      return {pages: [], cancelled: true};
+      return {cancelled: true};
     }
 
-    pages.push({
+    const newPage = {
       id: `page-${Date.now()}-${i}`,
       originalImage: canvas.toDataURL('image/png'),
       width: canvas.width,
       height: canvas.height
-    });
+    };
+    
+    onPageAdded(newPage);
     
     onProgress(Math.round((i / numPages) * 100));
     canvas.width = 0;
     canvas.height = 0; // immediate memory release
   }
 
-  return { pages, cancelled: false };
+  return { cancelled: false };
 }

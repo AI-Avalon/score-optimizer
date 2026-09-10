@@ -62,26 +62,35 @@ export const useStore = create<ScoreStore>((set, get) => ({
   }),
 
   loadPdf: async (file) => {
-    set({ isProcessing: true, progress: 0, originalFileName: file.name.replace('.pdf', '') });
-    const { pages, cancelled } = await importPdf(file, (p) => set({ progress: p }));
-    if (!cancelled) {
-      set({ pages, selectedPageId: pages[0]?.id || null, pageOverrides: {} });
-    }
+    set({ isProcessing: true, progress: 0, originalFileName: file.name.replace('.pdf', ''), pages: [], selectedPageId: null, pageOverrides: {} });
+    await importPdf(
+      file, 
+      (p) => set({ progress: p }),
+      (pageData) => set(state => {
+        const newPages = [...state.pages, pageData];
+        return { pages: newPages, selectedPageId: state.selectedPageId || newPages[0].id };
+      })
+    );
     set({ isProcessing: false });
   },
 
   loadTestPdf: async () => {
-    set({ isProcessing: true, progress: 0, originalFileName: '見開きテスト' });
+    console.log('loadTestPdf called');
+    set({ isProcessing: true, progress: 0, originalFileName: '見開きテスト', pages: [], selectedPageId: null, pageOverrides: {} });
     try {
       const res = await fetch('/見開きテスト.pdf');
       const blob = await res.blob();
       const file = new File([blob], '見開きテスト.pdf', { type: 'application/pdf' });
-      const { pages, cancelled } = await importPdf(file, (p) => set({ progress: p }));
-      if (!cancelled) {
-        set({ pages, selectedPageId: pages[0]?.id || null, pageOverrides: {} });
-      }
+      await importPdf(
+        file, 
+        (p) => set({ progress: p }),
+        (pageData) => set(state => {
+          const newPages = [...state.pages, pageData];
+          return { pages: newPages, selectedPageId: state.selectedPageId || newPages[0].id };
+        })
+      );
     } catch (err) {
-      console.error(err);
+      console.error('loadTestPdf error:', err);
     } finally {
       set({ isProcessing: false });
     }
