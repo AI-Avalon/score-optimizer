@@ -1,6 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { useScoreStore } from '../store/useScoreStore';
-import { createPageRenderer } from '../engine/pdfEngine';
 import { getSplitLineNormalizedX } from '../engine/geometry';
 import type { NormalizedRect } from '../types';
 import { Loader2, FileText } from 'lucide-react';
@@ -17,14 +16,12 @@ import { Loader2, FileText } from 'lucide-react';
 export function ScoreCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const rendererRef = useRef(createPageRenderer());
-  const pageProxyRef = useRef<any>(null);
+  const renderTaskRef = useRef<any>(null);
+  const pageObjRef = useRef<any>(null);
 
   const pdfDoc = useScoreStore((s) => s.pdfDoc);
   const currentPage = useScoreStore((s) => s.currentPage);
   const pages = useScoreStore((s) => s.pages);
-  const zoom = useScoreStore((s) => s.zoom);
-  const zoomMode = useScoreStore((s) => s.zoomMode);
   
   const cropRect = useScoreStore((s) => s.cropRect);
   const setCropRect = useScoreStore((s) => s.setCropRect);
@@ -42,6 +39,7 @@ export function ScoreCanvas() {
   const isAspectRatioLocked = useScoreStore((s) => s.isAspectRatioLocked);
   const selectedPaper = useScoreStore((s) => s.selectedPaper);
   const isDetecting = useScoreStore((s) => s.isDetecting);
+  const touchMode = useScoreStore((s) => s.touchMode);
 
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
   const [dragging, setDragging] = useState<string | null>(null);
@@ -71,18 +69,19 @@ export function ScoreCanvas() {
     const pageEntry = pages[currentPage];
     if (!pageEntry) return;
 
-    let cancelled = false;
+    let isCancelled = false;
     let renderPending = false;
     let animationFrameId: number;
 
     const renderPage = async (containerWidth: number, containerHeight: number) => {
-      if (cancelled) return;
+      if (isCancelled) return;
+
+      const ctx = canvas.getContext('2d', { alpha: false });
 
       // 白紙ページ
       if (pageEntry.isBlank) {
         canvas.width = Math.min(containerWidth, 600);
         canvas.height = Math.min(containerHeight, 800);
-        const ctx = canvas.getContext('2d');
         if (ctx) {
           ctx.fillStyle = '#ffffff';
           ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -99,7 +98,6 @@ export function ScoreCanvas() {
       if (pageEntry.deleted) {
         canvas.width = 400;
         canvas.height = 300;
-        const ctx = canvas.getContext('2d');
         if (ctx) {
           ctx.fillStyle = '#1c2029';
           ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -114,34 +112,59 @@ export function ScoreCanvas() {
       }
 
       try {
-        const page = await (pdfDoc as unknown as { getPage(n: number): Promise<Parameters<typeof rendererRef.current.render>[0]> }).getPage(pageEntry.sourceIndex + 1);
-        if (cancelled) return;
-        pageProxyRef.current = page;
-
-        const defaultViewport = page.getViewport({ scale: 1 });
-
-        let scale: number;
-        if (zoomMode === 'fit') {
-          const scaleX = containerWidth / defaultViewport.width;
-          const scaleY = containerHeight / defaultViewport.height;
-          scale = Math.min(scaleX, scaleY);
-        } else {
-          const fitScale = Math.min(
-            containerWidth / defaultViewport.width,
-            containerHeight / defaultViewport.height,
-          );
-          scale = fitScale * zoom;
+        // 1. 古いタスクの確実なキャンセル
+        if (renderTaskRef.current) {
+          renderTaskRef.current.cancel();
+          renderTaskRef.current = null;
+        }
+        // 2. 古いページメモリの解放
+        if (pageObjRef.current) {
+          pageObjRef.current.cleanup();
+          pageObjRef.current = null;
         }
 
-        const dpr = Math.min(window.devicePixelRatio || 1, 1.75);
-        const success = await rendererRef.current.render(page, canvas, scale * dpr);
-        if (success && !cancelled) {
-          canvas.style.width = `${canvas.width / dpr}px`;
-          canvas.style.height = `${canvas.height / dpr}px`;
+        const page = await (pdfDoc as unknown as { getPage(n: number): Promise<any> }).getPage(pageEntry.sourceIndex + 1);
+        if (isCancelled) {
+          page.cleanup();
+          return;
+        }
+        pageObjRef.current = page;
+
+        // 3. モバイルでの解像度クランプ (1.25倍に抑えてメモリクラッシュを物理防御)
+        const isMobile = window.innerWidth < 768;
+        const dpr = isMobile ? Math.min(window.devicePixelRatio || 1, 1.25) : Math.min(window.devicePixelRatio || 1, 2.0);
+
+        const unscaledViewport = page.getViewport({ scale: 1.0 });
+        const fitScale = Math.min(containerWidth / unscaledViewport.width, containerHeight / unscaledViewport.height);
+        const viewport = page.getViewport({ scale: fitScale * dpr });
+
+        // Canvasサイズのみ更新 (要素はそのまま)
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        canvas.style.width = `${viewport.width / dpr}px`;
+        canvas.style.height = `${viewport.height / dpr}px`;
+
+        if (ctx) {
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+
+        const renderContext = {
+          canvasContext: ctx!,
+          viewport: viewport,
+        };
+
+        const task = page.render(renderContext);
+        renderTaskRef.current = task;
+        await task.promise;
+        
+        if (!isCancelled) {
           setCanvasSize({ width: canvas.width / dpr, height: canvas.height / dpr });
         }
-      } catch (err) {
-        if (!cancelled) console.error('Render error:', err);
+      } catch (err: any) {
+        if (err?.name !== 'RenderingCancelledException' && !err?.message?.includes('cancelled')) {
+          console.error('Render error:', err);
+        }
       }
     };
 
@@ -171,18 +194,21 @@ export function ScoreCanvas() {
     triggerRender(container.clientWidth - 16, container.clientHeight - 16);
 
     return () => {
-      cancelled = true;
+      isCancelled = true;
       cancelAnimationFrame(animationFrameId);
       observer.disconnect();
-      rendererRef.current.cancel();
-      if (pageProxyRef.current) {
-        if (typeof pageProxyRef.current.cleanup === 'function') {
-          pageProxyRef.current.cleanup();
+      if (renderTaskRef.current) {
+        renderTaskRef.current.cancel();
+        renderTaskRef.current = null;
+      }
+      if (pageObjRef.current) {
+        if (typeof pageObjRef.current.cleanup === 'function') {
+          pageObjRef.current.cleanup();
         }
-        pageProxyRef.current = null;
+        pageObjRef.current = null;
       }
     };
-  }, [pdfDoc, currentPage, zoom, zoomMode, pages, settingsVersion]);
+  }, [pdfDoc, currentPage, pages, settingsVersion]);
 
   // ── Keyboard Nudge Controls ─────────────────────────────────────
   useEffect(() => {
@@ -239,6 +265,7 @@ export function ScoreCanvas() {
   // ── Handle Drag ─────────────────────────────────────────────────
   const handlePointerDown = useCallback(
     (handleId: string, frameId: 'main' | 'left' | 'right', rect: NormalizedRect, e: React.PointerEvent) => {
+      if (touchMode === 'scroll') return;
       e.preventDefault();
       e.stopPropagation();
       setDragging(handleId);
@@ -431,8 +458,9 @@ export function ScoreCanvas() {
             borderRadius: '1px',
             pointerEvents: 'none',
             zIndex: isActive ? 6 : 5,
-            opacity: dragging === 'c' && isActive ? 0.5 : 1,
+            opacity: touchMode === 'scroll' ? 0.3 : (dragging === 'c' && isActive ? 0.5 : 1),
             backgroundColor: dragging === 'c' && isActive ? `${color}1A` : 'transparent',
+            transition: 'opacity 0.2s ease',
           }}
         />
 
@@ -466,7 +494,10 @@ export function ScoreCanvas() {
                 top: `${h.y}px`,
                 cursor: h.cursor,
                 zIndex: isActive ? 11 : 10,
-                borderColor: color
+                borderColor: color,
+                opacity: touchMode === 'scroll' ? 0 : 1,
+                pointerEvents: touchMode === 'scroll' ? 'none' : 'auto',
+                transition: 'opacity 0.2s ease',
               }}
             />
           );
@@ -474,6 +505,10 @@ export function ScoreCanvas() {
       </div>
     );
   };
+
+  // ── Loupe HUD ──
+  const isDraggingHandle = dragging && dragging !== 'c' && dragging !== 'split-line';
+  const showLoupe = isDraggingHandle && touchMode === 'crop' && dragStartRef.current;
 
   return (
     <div
@@ -539,6 +574,69 @@ export function ScoreCanvas() {
           maxHeight: '100%',
         }}
       />
+
+      {/* Loupe HUD (Magnifying Glass) */}
+      {showLoupe && dragStartRef.current && (
+        <div style={{
+          position: 'fixed',
+          top: dragStartRef.current.y - 120, // 60px above finger (accounting for some extra spacing)
+          left: dragStartRef.current.x - 40,
+          width: '80px',
+          height: '80px',
+          borderRadius: '50%',
+          border: '2px solid var(--color-accent)',
+          background: 'var(--color-base)',
+          overflow: 'hidden',
+          zIndex: 100,
+          pointerEvents: 'none',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}>
+          <canvas
+            ref={(node) => {
+              if (node && canvasRef.current) {
+                // Copy the surrounding area into the loupe
+                const ctx = node.getContext('2d');
+                if (ctx) {
+                  // Ensure canvas exists and has width
+                  if (canvasRef.current.width > 0) {
+                    const dpr = window.innerWidth < 768 ? Math.min(window.devicePixelRatio || 1, 1.25) : Math.min(window.devicePixelRatio || 1, 2.0);
+                    // Get position relative to canvas
+                    const canvasRect = canvasRef.current.getBoundingClientRect();
+                    const x = (dragStartRef.current!.x - canvasRect.left) * dpr;
+                    const y = (dragStartRef.current!.y - canvasRect.top) * dpr;
+                    
+                    // We want to draw a zoomed in portion
+                    const ZOOM = 2;
+                    const srcSize = 80 / ZOOM;
+                    
+                    node.width = 80;
+                    node.height = 80;
+                    
+                    ctx.fillStyle = '#fff';
+                    ctx.fillRect(0,0,80,80);
+                    ctx.drawImage(
+                      canvasRef.current,
+                      x - srcSize / 2, y - srcSize / 2, srcSize, srcSize,
+                      0, 0, 80, 80
+                    );
+                    
+                    // Crosshair
+                    ctx.strokeStyle = 'var(--color-accent)';
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(40, 35); ctx.lineTo(40, 45);
+                    ctx.moveTo(35, 40); ctx.lineTo(45, 40);
+                    ctx.stroke();
+                  }
+                }
+              }
+            }}
+          />
+        </div>
+      )}
 
       {/* Crop overlays */}
       {showCropOverlay && (

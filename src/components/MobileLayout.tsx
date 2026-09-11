@@ -20,11 +20,13 @@ import {
   ArrowDown,
   ArrowLeft,
   ArrowRight,
-  FileText,
   Crop,
   SlidersHorizontal,
   Sparkles,
-  FileUp
+  FileUp,
+  Hand,
+  Scissors,
+  FileText
 } from 'lucide-react';
 import type { PaperPresetKey } from '../types';
 import { FULL_PAGE_RECT } from '../types';
@@ -69,6 +71,7 @@ export function MobileLayout() {
     selectedPaper, setSelectedPaper,
     deletePage, insertBlankPage,
     zoom, setZoom,
+    pan, setPan, touchMode, setTouchMode,
     nudgeCropRect, setCropRect, setLeftCropRect, setRightCropRect,
     undoAction
   } = useScoreStore();
@@ -126,26 +129,31 @@ export function MobileLayout() {
       onPinch: ({ offset: [d] }) => {
         setZoom(d);
       },
-      onDrag: ({ direction: [dx], swipe: [swipeX], distance: [distX], cancel }) => {
-        if (zoom > 1.05) return; // Only allow page swipe when not heavily zoomed
-        if (swipeX === -1 || (dx < 0 && distX > 80)) {
-          if (currentPage < pages.length - 1) {
-            setCurrentPage(currentPage + 1);
-            if (navigator.vibrate) navigator.vibrate(10);
+      onDrag: ({ direction: [dx], swipe: [swipeX], distance: [distX], delta: [deltaX, deltaY], touches, cancel }) => {
+        if (touches >= 2 || touchMode === 'scroll') {
+          setPan(prev => ({ x: prev.x + deltaX, y: prev.y + deltaY }));
+        }
+        
+        if (zoom <= 1.05 && touches === 1 && touchMode === 'scroll') {
+          if (swipeX === -1 || (dx < 0 && distX > 80)) {
+            if (currentPage < pages.length - 1) {
+              setCurrentPage(currentPage + 1);
+              if (navigator.vibrate) navigator.vibrate(10);
+            }
+            cancel();
+          } else if (swipeX === 1 || (dx > 0 && distX > 80)) {
+            if (currentPage > 0) {
+              setCurrentPage(currentPage - 1);
+              if (navigator.vibrate) navigator.vibrate(10);
+            }
+            cancel();
           }
-          cancel();
-        } else if (swipeX === 1 || (dx > 0 && distX > 80)) {
-          if (currentPage > 0) {
-            setCurrentPage(currentPage - 1);
-            if (navigator.vibrate) navigator.vibrate(10);
-          }
-          cancel();
         }
       }
     },
     {
       pinch: { scaleBounds: { min: 1, max: 5 }, rubberband: true },
-      drag: { axis: 'x', filterTaps: true, threshold: 10 }
+      drag: { filterTaps: true, threshold: 10 }
     }
   );
 
@@ -265,45 +273,76 @@ export function MobileLayout() {
           flex: 1, 
           display: 'flex', // Crucial for inner flex: 1 to work
           position: 'relative',
-          touchAction: 'none'
+          touchAction: 'none',
+          overflow: 'hidden'
         }}
       >
-        <ErrorBoundary>
-          <ScoreCanvas />
-        </ErrorBoundary>
+        <div style={{ flex: 1, display: 'flex', width: '100%', height: '100%', transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: 'center center' }}>
+          <ErrorBoundary>
+            <ScoreCanvas />
+          </ErrorBoundary>
+        </div>
       </div>
 
-      {/* ── Action Bar (Bottom Fixed - 56px) ── */}
+      {/* ── Action Bar (Bottom Fixed - 64px) ── */}
       <div style={{
-        height: '56px',
+        height: '64px',
         background: 'var(--color-panel)',
         borderTop: '1px solid var(--color-border)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-evenly',
-        padding: '0 12px'
+        padding: '0 8px'
       }}>
-        <button type="button" className="btn btn-icon" aria-label="前" onClick={() => { setCurrentPage(currentPage - 1); if (navigator.vibrate) navigator.vibrate(10); }} disabled={currentPage <= 0} style={{ width: '48px', height: '44px', borderRadius: '12px', background: 'transparent' }}>
+        <button type="button" className="btn btn-icon" aria-label="前" onClick={() => { setCurrentPage(currentPage - 1); if (navigator.vibrate) navigator.vibrate(10); }} disabled={currentPage <= 0} style={{ width: '48px', height: '48px', borderRadius: '12px', background: 'transparent' }}>
           <ChevronLeft size={24} />
         </button>
         
-        <button type="button" className="btn btn-icon" aria-label="戻す" onClick={() => undoAction()} style={{ width: '48px', height: '44px', borderRadius: '12px', background: 'transparent' }}>
+        <button type="button" className="btn btn-icon" aria-label="戻す" onClick={() => undoAction()} style={{ width: '48px', height: '48px', borderRadius: '12px', background: 'transparent' }}>
           <Undo2 size={22} />
         </button>
         
-        <button type="button" className="btn btn-icon" aria-label="枠微動" onClick={() => setActiveSheet('nudge')} style={{ width: '48px', height: '44px', borderRadius: '12px', background: activeSheet === 'nudge' ? 'var(--color-surface)' : 'transparent', color: activeSheet === 'nudge' ? 'var(--color-accent)' : '#fff' }}>
+        <button type="button" className="btn btn-icon" aria-label="枠微動" onClick={() => setActiveSheet('nudge')} style={{ width: '48px', height: '48px', borderRadius: '12px', background: activeSheet === 'nudge' ? 'var(--color-surface)' : 'transparent', color: activeSheet === 'nudge' ? 'var(--color-accent)' : '#fff' }}>
           <Move size={22} />
         </button>
 
-        <button type="button" className="btn btn-icon" aria-label="設定" onClick={() => setActiveSheet('settings')} style={{ width: '48px', height: '44px', borderRadius: '12px', background: activeSheet === 'settings' ? 'var(--color-surface)' : 'transparent', color: activeSheet === 'settings' ? 'var(--color-accent)' : '#fff' }}>
+        {/* ✋ / ✂️ Touch Mode Toggle */}
+        <div style={{ display: 'flex', background: 'var(--color-surface)', borderRadius: '12px', padding: '4px' }}>
+          <button 
+            type="button" 
+            onClick={() => setTouchMode('scroll')}
+            style={{ 
+              width: '48px', height: '48px', borderRadius: '8px', 
+              background: touchMode === 'scroll' ? 'var(--color-accent)' : 'transparent',
+              color: touchMode === 'scroll' ? '#fff' : 'var(--color-text-muted)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none'
+            }}
+          >
+            <Hand size={20} />
+          </button>
+          <button 
+            type="button" 
+            onClick={() => setTouchMode('crop')}
+            style={{ 
+              width: '48px', height: '48px', borderRadius: '8px', 
+              background: touchMode === 'crop' ? 'var(--color-accent)' : 'transparent',
+              color: touchMode === 'crop' ? '#fff' : 'var(--color-text-muted)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none'
+            }}
+          >
+            <Scissors size={20} />
+          </button>
+        </div>
+
+        <button type="button" className="btn btn-icon" aria-label="設定" onClick={() => setActiveSheet('settings')} style={{ width: '48px', height: '48px', borderRadius: '12px', background: activeSheet === 'settings' ? 'var(--color-surface)' : 'transparent', color: activeSheet === 'settings' ? 'var(--color-accent)' : '#fff' }}>
           <Settings size={22} />
         </button>
 
-        <button type="button" className="btn btn-icon" aria-label="一覧" onClick={() => setActiveSheet('thumbnails')} style={{ width: '48px', height: '44px', borderRadius: '12px', background: activeSheet === 'thumbnails' ? 'var(--color-surface)' : 'transparent', color: activeSheet === 'thumbnails' ? 'var(--color-accent)' : '#fff' }}>
+        <button type="button" className="btn btn-icon" aria-label="一覧" onClick={() => setActiveSheet('thumbnails')} style={{ width: '48px', height: '48px', borderRadius: '12px', background: activeSheet === 'thumbnails' ? 'var(--color-surface)' : 'transparent', color: activeSheet === 'thumbnails' ? 'var(--color-accent)' : '#fff' }}>
           <LayoutGrid size={22} />
         </button>
         
-        <button type="button" className="btn btn-icon" aria-label="次" onClick={() => { setCurrentPage(currentPage + 1); if (navigator.vibrate) navigator.vibrate(10); }} disabled={currentPage >= pages.length - 1} style={{ width: '48px', height: '44px', borderRadius: '12px', background: 'transparent' }}>
+        <button type="button" className="btn btn-icon" aria-label="次" onClick={() => { setCurrentPage(currentPage + 1); if (navigator.vibrate) navigator.vibrate(10); }} disabled={currentPage >= pages.length - 1} style={{ width: '48px', height: '48px', borderRadius: '12px', background: 'transparent' }}>
           <ChevronRight size={24} />
         </button>
       </div>
@@ -313,7 +352,7 @@ export function MobileLayout() {
         <>
           <div onClick={() => setActiveSheet('none')} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 90, animation: 'fadeIn 0.2s ease' }} />
           <div style={{
-            position: 'fixed', bottom: '56px', left: 0, right: 0, maxHeight: 'calc(85dvh - 56px)',
+            position: 'fixed', bottom: '64px', left: 0, right: 0, maxHeight: 'calc(65dvh - 64px)',
             background: 'var(--color-panel)', borderTop: '1px solid var(--color-border)',
             borderRadius: '24px 24px 0 0', zIndex: 100,
             paddingBottom: 'env(safe-area-inset-bottom, 20px)',

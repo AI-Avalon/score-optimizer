@@ -80,6 +80,8 @@ interface ScoreState {
   // UI state
   settingsVersion: number;
   zoom: number;
+  pan: { x: number; y: number };
+  touchMode: 'scroll' | 'crop';
   zoomMode: 'fit' | 'manual';
   isExporting: boolean;
   exportProgress: number;
@@ -102,6 +104,8 @@ interface ScoreState {
   setCurrentPage: (page: number) => void;
   updateSettings: (partial: Partial<ProcessSettings>) => void;
   setZoom: (zoom: number) => void;
+  setPan: (pan: { x: number; y: number } | ((prev: { x: number; y: number }) => { x: number; y: number })) => void;
+  setTouchMode: (mode: 'scroll' | 'crop') => void;
   setZoomMode: (mode: 'fit' | 'manual') => void;
   setCropRect: (rect: NormalizedRect) => void;
   setLeftCropRect: (rect: NormalizedRect) => void;
@@ -189,6 +193,8 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
   detectedCropRect: null,
   settingsVersion: 0,
   zoom: 1,
+  pan: { x: 0, y: 0 },
+  touchMode: 'scroll',
   zoomMode: 'fit',
   isExporting: false,
   exportProgress: 0,
@@ -333,8 +339,19 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
     set({ zoom: Math.max(0.1, Math.min(5, zoom)), zoomMode: 'manual' });
   },
 
+  setPan: (pan) => {
+    set((state) => ({
+      pan: typeof pan === 'function' ? pan(state.pan) : pan,
+      zoomMode: 'manual'
+    }));
+  },
+
+  setTouchMode: (mode: 'scroll' | 'crop') => {
+    set({ touchMode: mode });
+  },
+
   setZoomMode: (mode: 'fit' | 'manual') => {
-    set({ zoomMode: mode, zoom: 1 });
+    set({ zoomMode: mode, zoom: 1, pan: { x: 0, y: 0 } });
   },
 
   setCropRect: (rect: NormalizedRect) => {

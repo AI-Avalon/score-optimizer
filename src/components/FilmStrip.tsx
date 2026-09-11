@@ -39,9 +39,13 @@ export function FilmStrip() {
   useEffect(() => {
     if (!pdfDoc) return;
 
+    let isCancelled = false;
     const renderThumbs = async () => {
       const newUrls = new Map<number, string>();
+      
+      // 前後ページ優先などの高度なソートも可能だが、まずは直列化
       for (let i = 0; i < pages.length; i++) {
+        if (isCancelled) break;
         const page = pages[i];
 
         if (page.isBlank || page.deleted) {
@@ -75,16 +79,22 @@ export function FilmStrip() {
           tempCanvas.width = 0;
           tempCanvas.height = 0;
           pdfPage.cleanup();
+          // UIスレッドとGCに制御を戻す (モバイルクラッシュ防止)
+          await new Promise(r => setTimeout(r, 30));
+          
+          if (!isCancelled) {
+            setThumbUrls(new Map(newUrls)); // 逐次描画を反映
+          }
         } catch (_err) {
           // Ignore cancelled renders
         }
       }
-      setThumbUrls(newUrls);
     };
 
     renderThumbs();
 
     return () => {
+      isCancelled = true;
       thumbRenderers.current.forEach((r) => r.cancel());
     };
   }, [pdfDoc, pages, settingsVersion]);
