@@ -61,7 +61,7 @@ export function ScoreCanvas() {
   const displayRightCropRect = localRightCropRect ?? rightCropRect;
   const displaySplitOffset = localSplitOffset ?? settings.splitOffsetPercent;
 
-  // ── PDF Page Rendering ──────────────────────────────────────────
+  // ── PDF Page Rendering & Resize Handling ────────────────────────
   useEffect(() => {
     const canvas = canvasRef.current;
     const container = containerRef.current;
@@ -71,12 +71,14 @@ export function ScoreCanvas() {
     if (!pageEntry) return;
 
     let cancelled = false;
+    let renderPending = false;
+    let animationFrameId: number;
 
-    const renderPage = async () => {
+    const renderPage = async (containerWidth: number, containerHeight: number) => {
+      if (cancelled) return;
+
       // 白紙ページ
       if (pageEntry.isBlank) {
-        const containerWidth = container.clientWidth - 16;
-        const containerHeight = container.clientHeight - 16;
         canvas.width = Math.min(containerWidth, 600);
         canvas.height = Math.min(containerHeight, 800);
         const ctx = canvas.getContext('2d');
@@ -115,8 +117,6 @@ export function ScoreCanvas() {
         if (cancelled) return;
 
         const defaultViewport = page.getViewport({ scale: 1 });
-        const containerWidth = container.clientWidth - 16;
-        const containerHeight = container.clientHeight - 16;
 
         let scale: number;
         if (zoomMode === 'fit') {
@@ -140,30 +140,38 @@ export function ScoreCanvas() {
       }
     };
 
-    renderPage();
-
-    return () => {
-      cancelled = true;
-      rendererRef.current.cancel();
+    const triggerRender = (width: number, height: number) => {
+      if (renderPending) return;
+      renderPending = true;
+      animationFrameId = requestAnimationFrame(() => {
+        renderPending = false;
+        renderPage(width, height);
+      });
     };
-  }, [pdfDoc, currentPage, zoom, zoomMode, pages, settingsVersion]);
 
-  // ── Container resize observer ───────────────────────────────────
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    const observer = new ResizeObserver(() => {
-      if (pdfDoc) {
-        const canvas = canvasRef.current;
-        if (canvas) {
-          setCanvasSize({ width: canvas.width, height: canvas.height });
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry) {
+        const width = entry.contentRect.width - 16;
+        const height = entry.contentRect.height - 16;
+        if (width > 0 && height > 0) {
+          triggerRender(width, height);
         }
       }
     });
+
     observer.observe(container);
-    return () => observer.disconnect();
-  }, [pdfDoc]);
+
+    // Initial explicit render
+    triggerRender(container.clientWidth - 16, container.clientHeight - 16);
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(animationFrameId);
+      observer.disconnect();
+      rendererRef.current.cancel();
+    };
+  }, [pdfDoc, currentPage, zoom, zoomMode, pages, settingsVersion]);
 
   // ── Keyboard Nudge Controls ─────────────────────────────────────
   useEffect(() => {

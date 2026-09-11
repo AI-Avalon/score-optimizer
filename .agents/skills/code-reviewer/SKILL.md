@@ -1,6 +1,6 @@
 ---
 name: code-reviewer
-description: Validates memory disposal, DPI scale computation, design token audit, and responsive integrity.
+description: Validates memory disposal, DPI scale computation, design token audit, responsive integrity, and canvas fitting.
 ---
 
 # Code Reviewer Directives
@@ -11,6 +11,9 @@ description: Validates memory disposal, DPI scale computation, design token audi
 3. Mobile Duality & Undo: Ensure mobile has a dedicated root with an explicit on-screen Undo button.
 4. TypeScript Strictness: Zero any types.
 5. Design Token & Consistency Audit:
-   - Run grep check to ensure no raw hex colors or rgba() are hardcoded in inline style attributes.
-   - Verify that .btn-accent or equivalent primary buttons have identical text color (#ffffff) on both desktop and mobile.
+   - Verify no raw hex colors or rgba() are hardcoded in inline style attributes.
+   - Verify that accent buttons have identical text color (#ffffff) on both desktop and mobile.
    - Verify zero emojis or raw Unicode arrows exist in JSX.
+6. Canvas Fit Audit (Crucial):
+   - PDF描画canvasの実測高さ・幅が、親コンテナの表示可能領域（アスペクト比維持の最大領域）を適切に専有しているか確認する。
+   - ResizeObserver のコールバックが canvas.width/height の単なる再読込で済まされておらず、親コンテナの最新 contentRect に基づくスケール再計算と再描画（render）を正しく実行しているか厳格に検査する。

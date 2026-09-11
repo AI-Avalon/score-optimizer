@@ -99,11 +99,39 @@ test.describe('モバイル検証', () => {
       await fileInput.setInputFiles('tests/fixtures/見開きテスト.pdf');
     }
 
-    // 1. Canvas要素が確実に可視状態であり、サイズを持っていること
+    // 1. Canvasの厳格な専有率テスト (Task 2)
     const canvas = page.locator('canvas').first();
     await expect(canvas).toBeVisible({ timeout: 15000 });
-    const box = await canvas.boundingBox();
-    expect(box && box.width > 200 && box.height > 200).toBeTruthy();
+    
+    // canvasの親要素（Main Score Area = flex: 1 のコンテナ）
+    const canvasParent = canvas.locator('..');
+    const containerBox = await canvasParent.boundingBox();
+    const canvasBox = await canvas.boundingBox();
+    
+    expect(containerBox).toBeTruthy();
+    expect(canvasBox).toBeTruthy();
+    
+    if (containerBox && canvasBox) {
+      // 画面高さに対して60%以上、または横幅85%以上専有しているか
+      const isHeightFit = canvasBox.height >= containerBox.height * 0.60;
+      const isWidthFit = canvasBox.width >= containerBox.width * 0.85;
+      expect(isHeightFit || isWidthFit, `Canvas (${canvasBox.width}x${canvasBox.height}) is too small compared to Container (${containerBox.width}x${containerBox.height})`).toBeTruthy();
+    }
+
+    // 回転シミュレート (自動追従テスト)
+    await page.setViewportSize({ width: 844, height: 390 });
+    await page.waitForTimeout(500); // Wait for ResizeObserver & rendering
+    const rotatedContainerBox = await canvasParent.boundingBox();
+    const rotatedCanvasBox = await canvas.boundingBox();
+    if (rotatedContainerBox && rotatedCanvasBox) {
+      const isHeightFit = rotatedCanvasBox.height >= rotatedContainerBox.height * 0.60;
+      const isWidthFit = rotatedCanvasBox.width >= rotatedContainerBox.width * 0.85;
+      expect(isHeightFit || isWidthFit, `Rotated Canvas (${rotatedCanvasBox.width}x${rotatedCanvasBox.height}) is too small compared to Container (${rotatedContainerBox.width}x${rotatedContainerBox.height})`).toBeTruthy();
+    }
+    
+    // 戻す
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForTimeout(500);
 
     // 2. 「巨大なPDF」テキストや壊れたプレースホルダーが存在しないこと
     const hugeText = page.locator('text=/^PDF$/i, text=/でかい/i');
@@ -120,23 +148,50 @@ test.describe('モバイル検証', () => {
     // 依然としてCanvasが存在していること（ロード画面に戻っていない）
     await expect(canvas).toBeVisible({ timeout: 5000 });
 
-    // 3. ボトムシート (設定ドロワー) の検証
+    // 3. モバイル操作フローの網羅的自動テスト (Task 3)
+    const undoBtn = page.getByRole('button', { name: '戻す' });
+    await expect(undoBtn).toBeVisible({ timeout: 5000 });
+    await expect(undoBtn).toBeEnabled();
+
+    // ボトムシート (設定ドロワー) の検証
     const settingsBtn = page.getByRole('button', { name: '設定' });
     await settingsBtn.click();
 
-    // ボトムシート内の要素が可視になる
+    // タブ切り替え（用紙・トリミング・画質）の動作確認
+    const paperTab = page.getByRole('button', { name: /用紙・モード/ });
+    await expect(paperTab).toBeVisible({ timeout: 5000 });
+    
+    const cropTab = page.getByRole('button', { name: /トリミング/ });
+    await expect(cropTab).toBeVisible({ timeout: 5000 });
+    
+    const filterTab = page.getByRole('button', { name: /画質・二値化/ });
+    await expect(filterTab).toBeVisible({ timeout: 5000 });
+    
+    await cropTab.click();
+    await expect(page.getByText('黒枠を自動検出')).toBeVisible({ timeout: 5000 });
+    
+    await filterTab.click();
+    await expect(page.getByText('白黒二値化')).toBeVisible({ timeout: 5000 });
+    
+    await paperTab.click();
+    await expect(page.locator('select').first()).toBeVisible({ timeout: 5000 });
+
+    // ボトムシート下部に [ 全ページに適用 ] がスクロールなしで常時固定されているか
     const applyAllBtn = page.getByRole('button', { name: /全ページに適用/ });
     await expect(applyAllBtn).toBeVisible({ timeout: 5000 });
-    await applyAllBtn.click(); // アクション発火確認
+    
+    // Check if it's within viewport without scrolling (sticky)
+    const btnBox = await applyAllBtn.boundingBox();
+    expect(btnBox && btnBox.y < 844).toBeTruthy();
+    
+    await applyAllBtn.click(); // アクション発火確認（同時にシートも閉じる）
 
-    // 4. 使い方モーダルの検証
-    // 先にシートを閉じる
-    await page.mouse.click(10, 10);
+    // シートが閉じたことを確認
     await expect(applyAllBtn).toBeHidden({ timeout: 5000 });
 
+    // 4. 使い方モーダルの検証
     const helpBtn = page.locator('.mobile-layout-root').locator('button').filter({ hasText: '使い方' }).first();
     if (await helpBtn.count() === 0) {
-       // if icon only, click by aria-label or just try to find it
        const iconBtn = page.locator('.mobile-layout-root').locator('button').filter({ has: page.locator('svg.lucide-help-circle') }).first();
        await iconBtn.click();
     } else {
@@ -146,19 +201,16 @@ test.describe('モバイル検証', () => {
     const helpTitle = page.getByRole('heading', { name: '使い方ガイド' });
     await expect(helpTitle).toBeVisible({ timeout: 5000 });
 
-    // タブ切り替え確認
-    const paperTab = page.getByRole('button', { name: /用紙・製本/ });
-    await paperTab.click();
-    
+    const modalPaperTab = page.getByRole('button', { name: /用紙・製本/ });
+    await modalPaperTab.click();
     await expect(page.getByText('日本のオーケストラ標準のパート譜サイズです')).toBeVisible({ timeout: 5000 });
 
-    // モーダルを閉じる
     const closeBtn = page.locator('.btn-icon').filter({ has: page.locator('svg.lucide-x') }).first();
     await closeBtn.click();
 
     await expect(helpTitle).toBeHidden({ timeout: 5000 });
 
-    // スクリーンショットを保存
+    // スクリーンショットを保存 (Task 4)
     await page.screenshot({ path: 'test-results/mobile-strict-check.png', fullPage: true });
     
     expect(consoleErrors).toHaveLength(0);
