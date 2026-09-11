@@ -18,7 +18,7 @@ test.describe('デスクトップ検証', () => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
-    const emptyState = page.getByText('PDF をドラッグ＆ドロップ');
+    const emptyState = page.getByText('楽譜PDFをドラッグ＆ドロップ');
     await expect(emptyState).toBeVisible({ timeout: 10000 });
 
     // PDFファイルの読み込みをシミュレート

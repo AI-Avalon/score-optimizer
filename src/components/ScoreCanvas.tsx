@@ -3,6 +3,7 @@ import { useScoreStore } from '../store/useScoreStore';
 import { createPageRenderer } from '../engine/pdfEngine';
 import { getSplitLineNormalizedX } from '../engine/geometry';
 import type { NormalizedRect } from '../types';
+import { Loader2, FileText } from 'lucide-react';
 
 /**
  * MainCanvas — PDF ページ描画 + クロップオーバーレイ
@@ -39,6 +40,7 @@ export function ScoreCanvas() {
   const isLoading = useScoreStore((s) => s.isLoading);
   const isAspectRatioLocked = useScoreStore((s) => s.isAspectRatioLocked);
   const selectedPaper = useScoreStore((s) => s.selectedPaper);
+  const isDetecting = useScoreStore((s) => s.isDetecting);
 
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
   const [dragging, setDragging] = useState<string | null>(null);
@@ -472,18 +474,23 @@ export function ScoreCanvas() {
       }}
     >
       {/* Loading indicator */}
-      {isLoading && (
+      {(isLoading || isDetecting) && (
         <div style={{
           position: 'absolute',
           inset: 0,
           display: 'flex',
+          flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
           zIndex: 50,
           fontSize: '14px',
           color: 'var(--color-text-muted)',
+          background: 'rgba(17, 19, 24, 0.7)',
+          backdropFilter: 'blur(4px)',
+          gap: '12px'
         }}>
-          PDF を読み込み中...
+          <Loader2 size={32} className="animate-spin text-indigo-500" />
+          {isLoading ? 'PDF を解析中...' : '黒枠を自動検出中...'}
         </div>
       )}
 
@@ -499,8 +506,8 @@ export function ScoreCanvas() {
           textAlign: 'center',
           padding: '20px',
         }}>
-          <div style={{ fontSize: '48px', opacity: 0.3 }}>🎵</div>
-          <p>PDF をドラッグ＆ドロップするか、<br />ヘッダーの「PDF読込」をクリック</p>
+          <FileText size={48} style={{ opacity: 0.3 }} />
+          <p>楽譜PDFをドラッグ＆ドロップ、またはクリックして選択<br />A3見開き・B4/A4単ページ両対応</p>
         </div>
       )}
 

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useScoreStore } from '../store/useScoreStore';
-import { Sparkles, Save, Trash2, RotateCw, Copy, RefreshCcw } from 'lucide-react';
-import type { PageProcessingMode, PageOrder, OutputColorMode, FrontMatterMode, RotationDeg } from '../types';
+import { Sparkles, Save, Trash2, RotateCw, Copy, RefreshCcw, Lock, Unlock } from 'lucide-react';
+import type { PageProcessingMode, PageOrder, OutputColorMode, FrontMatterMode, RotationDeg, PaperPresetKey } from '../types';
+import { PAPER_PRESETS } from '../types';
 
 /**
  * Sidebar — app.py の全機能を網羅した設定パネル
@@ -67,6 +68,16 @@ export function Sidebar() {
   const pages = useScoreStore((s) => s.pages);
   const applyToAllNotification = useScoreStore((s) => s.applyToAllNotification);
   const applySettingsToRemainingPages = useScoreStore((s) => s.applySettingsToRemainingPages);
+  const selectedPaper = useScoreStore((s) => s.selectedPaper);
+  const setSelectedPaper = useScoreStore((s) => s.setSelectedPaper);
+  const customPaperMm = useScoreStore((s) => s.customPaperMm);
+  const setCustomPaperMm = useScoreStore((s) => s.setCustomPaperMm);
+  const marginMm = useScoreStore((s) => s.marginMm);
+  const setMarginMm = useScoreStore((s) => s.setMarginMm);
+  const isAspectRatioLocked = useScoreStore((s) => s.isAspectRatioLocked);
+  const setIsAspectRatioLocked = useScoreStore((s) => s.setIsAspectRatioLocked);
+  const exportDpi = useScoreStore((s) => s.exportDpi);
+  const setExportDpi = useScoreStore((s) => s.setExportDpi);
   
   const globalSettings = useScoreStore((s) => s.settings);
   const hasOverride = currentPage in pageOverrides;
@@ -109,10 +120,132 @@ export function Sidebar() {
         overflowY: 'auto',
         overflowX: 'hidden',
         background: 'var(--color-panel)',
-        borderRight: '1px solid var(--color-border)',
         flexShrink: 0,
+        position: 'relative',
       }}
     >
+      <div style={{ flex: 1, paddingBottom: '40px' }}>
+      {/* ── 出力用紙設定 ──────────────────────────────────────── */}
+      <div className="settings-section">
+        <div className="section-title">出力用紙・品質設定</div>
+        
+        {/* 用紙選択 */}
+        <div style={{ marginBottom: '8px' }}>
+          <span className="setting-label" style={{ display: 'block', marginBottom: '4px' }}>用紙サイズ</span>
+          <select
+            data-testid="paper-select"
+            value={selectedPaper}
+            onChange={(e) => setSelectedPaper(e.target.value as PaperPresetKey)}
+            style={{
+              width: '100%',
+              padding: '6px 8px',
+              borderRadius: '6px',
+              border: '1px solid var(--color-border)',
+              background: 'var(--color-surface)',
+              color: 'var(--color-text)',
+              fontSize: '13px',
+              outline: 'none',
+              cursor: 'pointer',
+            }}
+          >
+            {(Object.keys(PAPER_PRESETS) as PaperPresetKey[]).map((key) => (
+              <option key={key} value={key}>
+                {PAPER_PRESETS[key].label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* カスタム用紙サイズ入力 */}
+        {selectedPaper === 'custom' && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+              <span className="setting-label" style={{ fontSize: '11px' }}>幅 (mm)</span>
+              <input
+                type="number"
+                value={customPaperMm.w}
+                onChange={(e) => setCustomPaperMm(Number(e.target.value) || 210, customPaperMm.h)}
+                style={{ width: '100%' }}
+                placeholder="幅"
+                min={50}
+                max={1000}
+              />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+              <span className="setting-label" style={{ fontSize: '11px' }}>高さ (mm)</span>
+              <input
+                type="number"
+                value={customPaperMm.h}
+                onChange={(e) => setCustomPaperMm(customPaperMm.w, Number(e.target.value) || 297)}
+                style={{ width: '100%' }}
+                placeholder="高"
+                min={50}
+                max={1000}
+              />
+            </div>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+          {/* 余白入力 */}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            <span className="setting-label" style={{ fontSize: '11px' }}>余白 (mm)</span>
+            <input
+              type="number"
+              value={marginMm}
+              onChange={(e) => setMarginMm(Number(e.target.value) || 0)}
+              style={{ width: '100%' }}
+              min={0}
+              max={50}
+            />
+          </div>
+
+          {/* Aspect Ratio Lock */}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            <span className="setting-label" style={{ fontSize: '11px' }}>アスペクト比</span>
+            <button type="button"
+              className="btn btn-sm"
+              style={{
+                width: '100%',
+                justifyContent: 'center',
+                color: isAspectRatioLocked ? 'var(--color-accent)' : 'var(--color-text-muted)',
+                borderColor: isAspectRatioLocked ? 'var(--color-accent)' : 'var(--color-border)',
+                background: isAspectRatioLocked ? 'rgba(79, 70, 229, 0.1)' : 'transparent',
+              }}
+              onClick={() => setIsAspectRatioLocked(!isAspectRatioLocked)}
+            >
+              {isAspectRatioLocked ? <><Lock size={12} style={{ marginRight: '4px' }}/> 固定</> : <><Unlock size={12} style={{ marginRight: '4px' }}/> 自由</>}
+            </button>
+          </div>
+        </div>
+        
+        {/* 出力DPI */}
+        <div>
+          <span className="setting-label" style={{ display: 'block', marginBottom: '4px' }}>出力DPI</span>
+          <select
+            value={exportDpi}
+            onChange={(e) => setExportDpi(Number(e.target.value))}
+            style={{
+              width: '100%',
+              padding: '6px 8px',
+              borderRadius: '6px',
+              border: '1px solid var(--color-border)',
+              background: 'var(--color-surface)',
+              color: 'var(--color-text)',
+              fontSize: '13px',
+              outline: 'none',
+              cursor: 'pointer',
+            }}
+          >
+            <option value={150}>150 DPI (軽量)</option>
+            <option value={200}>200 DPI</option>
+            <option value={300}>300 DPI (標準印刷)</option>
+            <option value={400}>400 DPI (高精細)</option>
+            <option value={600}>600 DPI (最高峰)</option>
+          </select>
+        </div>
+      </div>
+
       {/* ── 一括操作 ──────────────────────────────────────── */}
       <div className="settings-section">
         <div className="section-title">一括操作</div>
@@ -183,8 +316,8 @@ export function Sidebar() {
           disabled={isDetecting}
           style={{ width: '100%', marginBottom: '10px' }}
         >
-          <Sparkles size={14} />
-          {isDetecting ? '検出中...' : '✨ 黒枠を自動検出'}
+          <Sparkles size={14} style={{ marginRight: '4px' }} />
+          {isDetecting ? '検出中...' : '黒枠を自動検出'}
         </button>
 
         <DecoupledSlider label="黒余白しきい値" value={settings.blackMarginThreshold} min={0} max={80} step={1} onChange={(v) => updateSettings({ blackMarginThreshold: v })} />
@@ -378,6 +511,17 @@ export function Sidebar() {
           {toastMessage}
         </div>
       )}
+      
+      </div>
+      {/* Scroll indicator shadow at bottom */}
+      <div style={{
+        position: 'sticky',
+        bottom: 0,
+        height: '32px',
+        background: 'linear-gradient(transparent, var(--color-panel))',
+        pointerEvents: 'none',
+        zIndex: 10
+      }} />
     </aside>
   );
 }

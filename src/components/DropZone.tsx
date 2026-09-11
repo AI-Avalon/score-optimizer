@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
 import { useScoreStore } from '../store/useScoreStore';
+import { FileText } from 'lucide-react';
 
 /**
  * DropZone — アプリ全体でのPDFドラッグ&ドロップ受付
@@ -73,7 +74,7 @@ export function DropZone({ children }: { children: React.ReactNode }) {
               gap: '12px',
             }}
           >
-            <div style={{ fontSize: '56px', opacity: 0.9 }}>📄</div>
+            <FileText size={56} style={{ opacity: 0.9, color: 'var(--color-accent)' }} />
             <div
               style={{
                 fontSize: '18px',

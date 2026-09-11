@@ -81,7 +81,7 @@ export function HelpModal() {
               <h3 style={{ fontSize: '18px', marginBottom: '16px', color: 'var(--color-accent)' }}>基本ワークフロー</h3>
               <ol style={{ paddingLeft: '24px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <li><strong>PDFを読み込む:</strong> 画面にPDFをドロップするか「PDF読込」からファイルを選択します。</li>
-                <li><strong>自動検出を活用:</strong> 「✨ 黒枠を自動検出」を押すと、スキャン時の黒い余白を自動でカットします。</li>
+                <li><strong>自動検出を活用:</strong> 「黒枠を自動検出」を押すと、スキャン時の黒い余白を自動でカットします。</li>
                 <li><strong>用紙を選択:</strong> 「A4縦」や「B4縦」など、印刷したい用紙サイズを選択します。</li>
                 <li><strong>一括適用:</strong> サイドバー（スマホは⚙設定）から「全ページに適用」を押すと、設定が全ページに反映されます。</li>
                 <li><strong>PDF出力:</strong> ヘッダー（スマホは上部バー）の「PDF出力」を押すと、印刷品質（300DPI）の最適化PDFが書き出されます。</li>
@@ -120,12 +120,12 @@ export function HelpModal() {
               <div>
                 <h4 style={{ fontSize: '16px', marginBottom: '12px', color: 'var(--color-accent)' }}>PCショートカット</h4>
                 <ul style={{ paddingLeft: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <li><kbd style={{ background: '#333', padding: '2px 6px', borderRadius: '4px' }}>←</kbd> / <kbd style={{ background: '#333', padding: '2px 6px', borderRadius: '4px' }}>→</kbd> : ページ送り</li>
-                  <li><kbd style={{ background: '#333', padding: '2px 6px', borderRadius: '4px' }}>Backspace</kbd> : ページ削除</li>
-                  <li><kbd style={{ background: '#333', padding: '2px 6px', borderRadius: '4px' }}>Ctrl</kbd> + <kbd style={{ background: '#333', padding: '2px 6px', borderRadius: '4px' }}>Z</kbd> : 戻す (Undo)</li>
-                  <li><kbd style={{ background: '#333', padding: '2px 6px', borderRadius: '4px' }}>Space</kbd> + ドラッグ : 画面平行移動</li>
-                  <li><kbd style={{ background: '#333', padding: '2px 6px', borderRadius: '4px' }}>矢印キー</kbd> : 枠の1mm微調整</li>
-                  <li><kbd style={{ background: '#333', padding: '2px 6px', borderRadius: '4px' }}>Shift</kbd> + 矢印 : 枠の大きく微調整</li>
+                  <li><kbd style={{ background: 'var(--color-surface)', padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--color-border)' }}>←</kbd> / <kbd style={{ background: 'var(--color-surface)', padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--color-border)' }}>→</kbd> : ページ送り</li>
+                  <li><kbd style={{ background: 'var(--color-surface)', padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--color-border)' }}>Backspace</kbd> : ページ削除</li>
+                  <li><kbd style={{ background: 'var(--color-surface)', padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--color-border)' }}>Ctrl</kbd> + <kbd style={{ background: 'var(--color-surface)', padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--color-border)' }}>Z</kbd> : 戻す (Undo)</li>
+                  <li><kbd style={{ background: 'var(--color-surface)', padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--color-border)' }}>Space</kbd> + ドラッグ : 画面平行移動</li>
+                  <li><kbd style={{ background: 'var(--color-surface)', padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--color-border)' }}>矢印キー</kbd> : 枠の1mm微調整</li>
+                  <li><kbd style={{ background: 'var(--color-surface)', padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--color-border)' }}>Shift</kbd> + 矢印 : 枠の大きく微調整</li>
                 </ul>
               </div>
               <div>

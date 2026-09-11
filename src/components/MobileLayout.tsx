@@ -11,11 +11,18 @@ import {
   Download,
   Trash2,
   FilePlus,
-  Copy,
-  RefreshCcw,
   Move,
   Maximize,
-  HelpCircle
+  HelpCircle,
+  Undo2,
+  ArrowUp,
+  ArrowDown,
+  ArrowLeft,
+  ArrowRight,
+  FileText,
+  Crop,
+  SlidersHorizontal,
+  Sparkles
 } from 'lucide-react';
 import type { PaperPresetKey } from '../types';
 import { FULL_PAGE_RECT } from '../types';
@@ -56,11 +63,12 @@ export function MobileLayout() {
     pdfDoc, pages, currentPage, setCurrentPage,
     isExporting, exportPdf, loadPdfFromFile, pdfFileName,
     updateSettings, detectBlackMargins, isDetecting,
-    applySettingsToAllPages, applySettingsToRemainingPages, resetToDefaults,
+    applySettingsToAllPages, resetToDefaults,
     selectedPaper, setSelectedPaper,
     deletePage, insertBlankPage,
     zoom, setZoom,
-    nudgeCropRect, setCropRect, setLeftCropRect, setRightCropRect
+    nudgeCropRect, setCropRect, setLeftCropRect, setRightCropRect,
+    undoAction
   } = useScoreStore();
 
   const globalSettings = useScoreStore(s => s.settings);
@@ -73,6 +81,7 @@ export function MobileLayout() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeSheet, setActiveSheet] = useState<'none' | 'settings' | 'thumbnails' | 'nudge'>('none');
+  const [activeTab, setActiveTab] = useState<'paper' | 'crop' | 'filter'>('paper');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   
   const handleFileSelect = useCallback(
@@ -94,12 +103,6 @@ export function MobileLayout() {
   const handleApplyAll = () => {
     applySettingsToAllPages();
     showToast('全ページに適用しました');
-    setActiveSheet('none');
-  };
-
-  const handleApplyRemaining = () => {
-    applySettingsToRemainingPages();
-    showToast('このページ以降に適用しました');
     setActiveSheet('none');
   };
 
@@ -235,6 +238,10 @@ export function MobileLayout() {
           <ChevronLeft size={24} />
         </button>
         
+        <button type="button" className="btn btn-icon" aria-label="戻す" onClick={() => undoAction()} style={{ width: '48px', height: '44px', borderRadius: '12px', background: 'transparent' }}>
+          <Undo2 size={22} />
+        </button>
+        
         <button type="button" className="btn btn-icon" aria-label="枠微動" onClick={() => setActiveSheet('nudge')} style={{ width: '48px', height: '44px', borderRadius: '12px', background: activeSheet === 'nudge' ? 'var(--color-surface)' : 'transparent', color: activeSheet === 'nudge' ? 'var(--color-accent)' : '#fff' }}>
           <Move size={22} />
         </button>
@@ -268,18 +275,18 @@ export function MobileLayout() {
               <div style={{ width: '48px', height: '5px', borderRadius: '3px', background: 'var(--color-border-hover)' }} />
             </div>
 
-            <div style={{ flex: 1, overflowY: 'auto', padding: '0 24px 24px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
               
               {activeSheet === 'nudge' && (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', padding: '0 24px 24px' }}>
                   <div style={{ fontSize: '18px', fontWeight: 700 }}>枠微動 (Nudge)</div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
                     <div />
-                    <button type="button" className="btn btn-surface" style={{ height: '64px', borderRadius: '16px' }} onClick={() => doNudge(0, -0.005)}>↑</button>
+                    <button type="button" className="btn btn-surface" style={{ height: '64px', borderRadius: '16px' }} onClick={() => doNudge(0, -0.005)}><ArrowUp size={24} /></button>
                     <div />
-                    <button type="button" className="btn btn-surface" style={{ height: '64px', borderRadius: '16px' }} onClick={() => doNudge(-0.005, 0)}>←</button>
-                    <button type="button" className="btn btn-surface" style={{ height: '64px', borderRadius: '16px' }} onClick={() => doNudge(0, 0.005)}>↓</button>
-                    <button type="button" className="btn btn-surface" style={{ height: '64px', borderRadius: '16px' }} onClick={() => doNudge(0.005, 0)}>→</button>
+                    <button type="button" className="btn btn-surface" style={{ height: '64px', borderRadius: '16px' }} onClick={() => doNudge(-0.005, 0)}><ArrowLeft size={24} /></button>
+                    <button type="button" className="btn btn-surface" style={{ height: '64px', borderRadius: '16px' }} onClick={() => doNudge(0, 0.005)}><ArrowDown size={24} /></button>
+                    <button type="button" className="btn btn-surface" style={{ height: '64px', borderRadius: '16px' }} onClick={() => doNudge(0.005, 0)}><ArrowRight size={24} /></button>
                   </div>
                   <button type="button" className="btn btn-accent" style={{ marginTop: '16px', width: '100%', padding: '16px', borderRadius: '12px' }} onClick={fitFullScreen}>
                     <Maximize size={18} style={{ marginRight: '8px' }} />
@@ -289,7 +296,7 @@ export function MobileLayout() {
               )}
 
               {activeSheet === 'thumbnails' && (
-                <div style={{ margin: '0 -24px' }}>
+                <div style={{ padding: '0 0 24px' }}>
                   <div style={{ padding: '0 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                     <div style={{ fontSize: '18px', fontWeight: 700 }}>ページ一覧</div>
                     <div style={{ display: 'flex', gap: '8px' }}>
@@ -306,103 +313,120 @@ export function MobileLayout() {
               )}
 
               {activeSheet === 'settings' && (
-                <>
-                  <div style={{ fontSize: '20px', fontWeight: 700 }}>設定</div>
-                  
-                  {/* Processing Mode */}
-                  <div style={{ display: 'flex', gap: '8px', background: 'var(--color-surface)', padding: '6px', borderRadius: '12px' }}>
-                    <button type="button"
-                      style={{
-                        flex: 1, padding: '12px', borderRadius: '8px', fontSize: '14px', fontWeight: 700,
-                        background: settings.pageProcessingMode === 'spread_split' ? 'var(--color-accent)' : 'transparent',
-                        color: settings.pageProcessingMode === 'spread_split' ? '#fff' : 'rgba(255,255,255,0.6)',
-                        border: 'none', transition: 'all 0.2s'
-                      }}
-                      onClick={() => updateSettings({ pageProcessingMode: 'spread_split' })}
-                    >
-                      見開き分割
-                    </button>
-                    <button type="button"
-                      style={{
-                        flex: 1, padding: '12px', borderRadius: '8px', fontSize: '14px', fontWeight: 700,
-                        background: settings.pageProcessingMode === 'single_fit' ? 'var(--color-accent)' : 'transparent',
-                        color: settings.pageProcessingMode === 'single_fit' ? '#fff' : 'rgba(255,255,255,0.6)',
-                        border: 'none', transition: 'all 0.2s'
-                      }}
-                      onClick={() => updateSettings({ pageProcessingMode: 'single_fit' })}
-                    >
-                      単ページ
-                    </button>
-                  </div>
-
-                  {/* 用紙サイズ */}
-                  <div>
-                    <div className="section-title">用紙判型</div>
-                    <select
-                      value={selectedPaper}
-                      onChange={(e) => setSelectedPaper(e.target.value as PaperPresetKey)}
-                      style={{ width: '100%', padding: '16px', borderRadius: '12px', background: 'var(--color-surface)', color: 'var(--color-text)', border: '1px solid var(--color-border)', fontSize: '16px', outline: 'none', appearance: 'none' }}
-                    >
-                      <option value="a4_portrait">A4 縦</option>
-                      <option value="b4_portrait">B4 縦 (日本のオケ標準)</option>
-                      <option value="kiku_music">菊倍判 (楽譜標準)</option>
-                      <option value="a3_landscape">A3 横 (見開きスコア)</option>
-                      <option value="us_letter">US Letter</option>
-                      <option value="custom">カスタム (mm入力)</option>
-                    </select>
-                  </div>
-
-                  {/* 自動クロップ & 調整 */}
-                  <div style={{ background: 'var(--color-surface)', padding: '20px', borderRadius: '16px', border: '1px solid var(--color-border)' }}>
-                    <div className="section-title" style={{ marginBottom: '16px' }}>トリミング調整</div>
-                    <button type="button" className="btn btn-green" onClick={() => detectBlackMargins()} disabled={isDetecting} style={{ width: '100%', padding: '14px', fontSize: '16px', fontWeight: 600, marginBottom: '20px', borderRadius: '12px' }}>
-                      {isDetecting ? '検出中...' : '✨ 黒枠を自動検出'}
-                    </button>
-                    
-                    <label className="checkbox-row" style={{ marginBottom: '20px' }}>
-                      <input type="checkbox" checked={settings.autoCropEnabled} onChange={(e) => updateSettings({ autoCropEnabled: e.target.checked })} style={{ transform: 'scale(1.3)' }} />
-                      <span style={{ fontSize: '16px', marginLeft: '4px' }}>自動トリミングを使う</span>
-                    </label>
-
-                    <div style={{ borderTop: '1px solid var(--color-border)', margin: '0 -20px 20px', padding: '20px 20px 0' }}>
-                      <div className="section-title">手動トリム (%)</div>
-                      <DecoupledSlider label="左" value={settings.manualTrimLeftPercent} min={0} max={20} step={0.5} onChange={(v) => updateSettings({ manualTrimLeftPercent: v })} />
-                      <DecoupledSlider label="右" value={settings.manualTrimRightPercent} min={0} max={20} step={0.5} onChange={(v) => updateSettings({ manualTrimRightPercent: v })} />
-                      <DecoupledSlider label="上" value={settings.manualTrimTopPercent} min={0} max={20} step={0.5} onChange={(v) => updateSettings({ manualTrimTopPercent: v })} />
-                      <DecoupledSlider label="下" value={settings.manualTrimBottomPercent} min={0} max={20} step={0.5} onChange={(v) => updateSettings({ manualTrimBottomPercent: v })} />
+                <div style={{ display: 'flex', flexDirection: 'column', height: '100%', flex: 1 }}>
+                  {/* シートヘッダー & タブ切り替えバー */}
+                  <div style={{ flexShrink: 0, borderBottom: '1px solid var(--color-border)', padding: '0 16px 12px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px', background: 'var(--color-surface)', padding: '4px', borderRadius: '12px', fontSize: '12px', fontWeight: 600 }}>
+                      <button type="button" onClick={() => setActiveTab('paper')} style={{ padding: '8px 4px', borderRadius: '8px', background: activeTab === 'paper' ? 'var(--color-accent)' : 'transparent', color: activeTab === 'paper' ? '#fff' : 'var(--color-text-muted)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', border: 'none' }}>
+                        <FileText size={16} /> 用紙・モード
+                      </button>
+                      <button type="button" onClick={() => setActiveTab('crop')} style={{ padding: '8px 4px', borderRadius: '8px', background: activeTab === 'crop' ? 'var(--color-accent)' : 'transparent', color: activeTab === 'crop' ? '#fff' : 'var(--color-text-muted)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', border: 'none' }}>
+                        <Crop size={16} /> トリミング
+                      </button>
+                      <button type="button" onClick={() => setActiveTab('filter')} style={{ padding: '8px 4px', borderRadius: '8px', background: activeTab === 'filter' ? 'var(--color-accent)' : 'transparent', color: activeTab === 'filter' ? '#fff' : 'var(--color-text-muted)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', border: 'none' }}>
+                        <SlidersHorizontal size={16} /> 画質・二値化
+                      </button>
                     </div>
                   </div>
 
-                  {/* 画質設定 */}
-                  <div>
-                    <div className="section-title">画質設定</div>
-                    <label className="checkbox-row" style={{ marginBottom: '16px' }}>
-                      <input type="checkbox" checked={settings.outputColorMode === 'monochrome'} onChange={(e) => updateSettings({ outputColorMode: e.target.checked ? 'monochrome' : 'original' })} style={{ transform: 'scale(1.3)' }} />
-                      <span style={{ fontSize: '16px', marginLeft: '4px' }}>白黒二値化</span>
-                    </label>
-                    {settings.outputColorMode === 'monochrome' && (
-                      <div style={{ padding: '0 8px' }}>
-                        <DecoupledSlider label="二値化しきい値" value={settings.fixedThreshold} min={80} max={230} step={1} onChange={(v) => updateSettings({ fixedThreshold: v })} />
+                  {/* スクロール可能なタブコンテンツ領域 */}
+                  <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                    {activeTab === 'paper' && (
+                      <>
+                        {/* Processing Mode */}
+                        <div style={{ display: 'flex', gap: '8px', background: 'var(--color-surface)', padding: '6px', borderRadius: '12px' }}>
+                          <button type="button"
+                            style={{
+                              flex: 1, padding: '12px', borderRadius: '8px', fontSize: '14px', fontWeight: 700,
+                              background: settings.pageProcessingMode === 'spread_split' ? 'var(--color-accent)' : 'transparent',
+                              color: settings.pageProcessingMode === 'spread_split' ? '#fff' : 'rgba(255,255,255,0.6)',
+                              border: 'none', transition: 'all 0.2s'
+                            }}
+                            onClick={() => updateSettings({ pageProcessingMode: 'spread_split' })}
+                          >
+                            見開き分割
+                          </button>
+                          <button type="button"
+                            style={{
+                              flex: 1, padding: '12px', borderRadius: '8px', fontSize: '14px', fontWeight: 700,
+                              background: settings.pageProcessingMode === 'single_fit' ? 'var(--color-accent)' : 'transparent',
+                              color: settings.pageProcessingMode === 'single_fit' ? '#fff' : 'rgba(255,255,255,0.6)',
+                              border: 'none', transition: 'all 0.2s'
+                            }}
+                            onClick={() => updateSettings({ pageProcessingMode: 'single_fit' })}
+                          >
+                            単ページ
+                          </button>
+                        </div>
+
+                        {/* 用紙サイズ */}
+                        <div>
+                          <div className="section-title">用紙判型</div>
+                          <select
+                            value={selectedPaper}
+                            onChange={(e) => setSelectedPaper(e.target.value as PaperPresetKey)}
+                            style={{ width: '100%', padding: '16px', borderRadius: '12px', background: 'var(--color-surface)', color: 'var(--color-text)', border: '1px solid var(--color-border)', fontSize: '16px', outline: 'none', appearance: 'none' }}
+                          >
+                            <option value="a4_portrait">A4 縦</option>
+                            <option value="b4_portrait">B4 縦 (日本のオケ標準)</option>
+                            <option value="kiku_music">菊倍判 (楽譜標準)</option>
+                            <option value="a3_landscape">A3 横 (見開きスコア)</option>
+                            <option value="us_letter">US Letter</option>
+                            <option value="custom">カスタム (mm入力)</option>
+                          </select>
+                        </div>
+                      </>
+                    )}
+
+                    {activeTab === 'crop' && (
+                      <div style={{ background: 'var(--color-surface)', padding: '20px', borderRadius: '16px', border: '1px solid var(--color-border)' }}>
+                        <div className="section-title" style={{ marginBottom: '16px' }}>トリミング調整</div>
+                        <button type="button" className="btn btn-green" onClick={() => detectBlackMargins()} disabled={isDetecting} style={{ width: '100%', padding: '14px', fontSize: '16px', fontWeight: 600, marginBottom: '20px', borderRadius: '12px' }}>
+                          <Sparkles size={16} style={{ marginRight: '6px' }} />
+                          {isDetecting ? '検出中...' : '黒枠を自動検出'}
+                        </button>
+                        
+                        <label className="checkbox-row" style={{ marginBottom: '20px' }}>
+                          <input type="checkbox" checked={settings.autoCropEnabled} onChange={(e) => updateSettings({ autoCropEnabled: e.target.checked })} style={{ transform: 'scale(1.3)' }} />
+                          <span style={{ fontSize: '16px', marginLeft: '4px' }}>自動トリミングを使う</span>
+                        </label>
+
+                        <div style={{ borderTop: '1px solid var(--color-border)', margin: '0 -20px 0', padding: '20px 20px 0' }}>
+                          <div className="section-title">手動トリム (%)</div>
+                          <DecoupledSlider label="左" value={settings.manualTrimLeftPercent} min={0} max={20} step={0.5} onChange={(v) => updateSettings({ manualTrimLeftPercent: v })} />
+                          <DecoupledSlider label="右" value={settings.manualTrimRightPercent} min={0} max={20} step={0.5} onChange={(v) => updateSettings({ manualTrimRightPercent: v })} />
+                          <DecoupledSlider label="上" value={settings.manualTrimTopPercent} min={0} max={20} step={0.5} onChange={(v) => updateSettings({ manualTrimTopPercent: v })} />
+                          <DecoupledSlider label="下" value={settings.manualTrimBottomPercent} min={0} max={20} step={0.5} onChange={(v) => updateSettings({ manualTrimBottomPercent: v })} />
+                        </div>
+                      </div>
+                    )}
+
+                    {activeTab === 'filter' && (
+                      <div>
+                        <div className="section-title">画質設定</div>
+                        <label className="checkbox-row" style={{ marginBottom: '16px' }}>
+                          <input type="checkbox" checked={settings.outputColorMode === 'monochrome'} onChange={(e) => updateSettings({ outputColorMode: e.target.checked ? 'monochrome' : 'original' })} style={{ transform: 'scale(1.3)' }} />
+                          <span style={{ fontSize: '16px', marginLeft: '4px' }}>白黒二値化</span>
+                        </label>
+                        {settings.outputColorMode === 'monochrome' && (
+                          <div style={{ padding: '0 8px' }}>
+                            <DecoupledSlider label="二値化しきい値" value={settings.fixedThreshold} min={80} max={230} step={1} onChange={(v) => updateSettings({ fixedThreshold: v })} />
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
 
-                  {/* 一括・リセット */}
-                  <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    <button type="button" className="btn btn-accent" onClick={handleApplyAll} style={{ padding: '16px', fontSize: '16px', fontWeight: 700, borderRadius: '12px', boxShadow: '0 4px 16px rgba(79, 70, 229, 0.4)' }}>
-                      <Copy size={18} style={{ marginRight: '8px' }} />
+                  {/* 最下部に常時固定されるアクションバー (Sticky Footer) */}
+                  <div style={{ flexShrink: 0, padding: '12px 16px', borderTop: '1px solid var(--color-border)', background: 'var(--color-panel)', display: 'flex', gap: '8px' }}>
+                    <button type="button" onClick={() => { resetToDefaults(); setActiveSheet('none'); }} style={{ padding: '12px 16px', background: 'var(--color-surface)', color: 'var(--color-text)', borderRadius: '12px', fontSize: '13px', fontWeight: 600, border: 'none' }}>
+                      リセット
+                    </button>
+                    <button type="button" onClick={handleApplyAll} className="btn-accent" style={{ flex: 1, padding: '12px 16px', color: '#fff', borderRadius: '12px', fontSize: '13px', fontWeight: 700, border: 'none', boxShadow: '0 4px 12px rgba(79, 70, 229, 0.4)' }}>
                       全ページに適用
                     </button>
-                    <button type="button" className="btn" onClick={handleApplyRemaining} style={{ padding: '16px', fontSize: '16px', fontWeight: 700, borderRadius: '12px', background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
-                      <Copy size={18} style={{ marginRight: '8px' }} />
-                      このページ以降に適用
-                    </button>
-                    <button type="button" className="btn" onClick={() => { resetToDefaults(); setActiveSheet('none'); }} style={{ padding: '16px', fontSize: '15px', borderRadius: '12px', background: 'var(--color-surface)', color: 'var(--color-danger)' }}>
-                      <RefreshCcw size={18} style={{ marginRight: '8px' }} />
-                      初期値にリセット
-                    </button>
                   </div>
-                </>
+                </div>
               )}
             </div>
           </div>
@@ -411,7 +435,7 @@ export function MobileLayout() {
 
       {toastMessage && (
         <div style={{
-          position: 'absolute', top: '90px', left: '50%', transform: 'translateX(-50%)',
+          position: 'absolute', top: 'calc(env(safe-area-inset-top, 16px) + 12px)', left: '50%', transform: 'translateX(-50%)',
           background: 'var(--color-green)', color: '#fff', padding: '14px 28px',
           borderRadius: '999px', fontSize: '14px', fontWeight: 700,
           boxShadow: '0 8px 32px rgba(16, 185, 129, 0.4)', zIndex: 110, pointerEvents: 'none',
