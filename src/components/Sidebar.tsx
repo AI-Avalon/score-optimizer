@@ -192,6 +192,15 @@ export function Sidebar() {
         <div className="settings-section">
           <div className="section-title">見開き設定</div>
           {slider('分割位置補正 (%)', settings.splitOffsetPercent, -20, 20, 0.5, (v) => updateSettings({ splitOffsetPercent: v }))}
+          
+          <label className="checkbox-row" style={{ marginTop: '12px', marginBottom: '12px' }}>
+            <input
+              type="checkbox"
+              checked={settings.independentSplitFrames}
+              onChange={(e) => updateSettings({ independentSplitFrames: e.target.checked })}
+            />
+            左右個別枠を有効にする
+          </label>
 
           <div style={{ marginTop: '8px' }}>
             <span className="setting-label" style={{ display: 'block', marginBottom: '6px' }}>ページ順</span>

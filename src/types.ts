@@ -165,6 +165,8 @@ export interface ProcessSettings {
   bodyStartPage: number;
   /** 本文前ページの扱い */
   frontMatterMode: FrontMatterMode;
+  /** 見開き分割時、左右で個別のクロップ枠を使用するか */
+  independentSplitFrames: boolean;
 }
 
 // ─── PageOverride (app.py L39-53 完全移植) ─────────────────────────────
@@ -184,6 +186,7 @@ export interface PageOverride {
   useAdaptiveThreshold: boolean;
   fixedThreshold: number;
   outputColorMode: OutputColorMode;
+  independentSplitFrames: boolean;
 }
 
 // ─── ページ管理 (仮想ページ配列) ──────────────────────────────────────
@@ -235,6 +238,7 @@ export const DEFAULT_SETTINGS: ProcessSettings = {
   outputColorMode: 'monochrome',
   bodyStartPage: 2,
   frontMatterMode: 'single',
+  independentSplitFrames: false,
 };
 
 export const FULL_PAGE_RECT: NormalizedRect = { x: 0, y: 0, width: 1, height: 1 };

@@ -73,9 +73,12 @@ interface ScoreState {
 
   // Crop state (NormalizedCoordinates only — geometry-guard)
   cropRect: NormalizedRect;
+  leftCropRect: NormalizedRect;
+  rightCropRect: NormalizedRect;
   detectedCropRect: NormalizedRect | null;
 
   // UI state
+  settingsVersion: number;
   zoom: number;
   zoomMode: 'fit' | 'manual';
   isExporting: boolean;
@@ -100,6 +103,8 @@ interface ScoreState {
   setZoom: (zoom: number) => void;
   setZoomMode: (mode: 'fit' | 'manual') => void;
   setCropRect: (rect: NormalizedRect) => void;
+  setLeftCropRect: (rect: NormalizedRect) => void;
+  setRightCropRect: (rect: NormalizedRect) => void;
   detectBlackMargins: () => Promise<void>;
   savePageOverride: () => void;
   removePageOverride: () => void;
@@ -175,7 +180,10 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
   marginMm: 0,
   pageOverrides: {},
   cropRect: { ...FULL_PAGE_RECT },
+  leftCropRect: { ...FULL_PAGE_RECT },
+  rightCropRect: { ...FULL_PAGE_RECT },
   detectedCropRect: null,
+  settingsVersion: 0,
   zoom: 1,
   zoomMode: 'fit',
   isExporting: false,
@@ -233,6 +241,8 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
         pages: pageEntries,
         detectedCropRect: null,
         cropRect: computeCropRect(get().settings, null),
+        leftCropRect: computeCropRect(get().settings, null),
+        rightCropRect: computeCropRect(get().settings, null),
         loadingProgress: null,
       });
 
@@ -262,7 +272,8 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
     // 新ページで自動検出
     const currentPageEntry = state.pages[clamped];
     if (state.settings.autoCropEnabled && currentPageEntry && !currentPageEntry.isBlank && !currentPageEntry.deleted) {
-      set({ cropRect: computeCropRect(state.settings, null) });
+      const newCrop = computeCropRect(state.settings, null);
+      set({ cropRect: newCrop, leftCropRect: newCrop, rightCropRect: newCrop });
       get().detectBlackMargins();
     }
   },
@@ -271,7 +282,7 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
     const state = get();
     const newSettings = { ...state.settings, ...partial };
     const newCrop = computeCropRect(newSettings, state.detectedCropRect);
-    set({ settings: newSettings, cropRect: newCrop });
+    set({ settings: newSettings, cropRect: newCrop, leftCropRect: newCrop, rightCropRect: newCrop });
   },
 
   setSplitOffsetPercent: (percent: number) => {
@@ -290,6 +301,14 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
 
   setCropRect: (rect: NormalizedRect) => {
     set({ cropRect: rect });
+  },
+
+  setLeftCropRect: (rect: NormalizedRect) => {
+    set({ leftCropRect: rect });
+  },
+
+  setRightCropRect: (rect: NormalizedRect) => {
+    set({ rightCropRect: rect });
   },
 
   // ── 黒枠自動検出 Worker (otsu-worker-tester skill) ──────────────
@@ -336,7 +355,7 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
       const currentState = get();
       const detected = response.cropRect;
       const newCrop = computeCropRect(currentState.settings, detected);
-      set({ detectedCropRect: detected, cropRect: newCrop, isDetecting: false });
+      set({ detectedCropRect: detected, cropRect: newCrop, leftCropRect: newCrop, rightCropRect: newCrop, isDetecting: false });
     } catch (err) {
       console.error('Auto-detect failed:', err);
       set({ isDetecting: false });
@@ -362,6 +381,7 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
       useAdaptiveThreshold: s.useAdaptiveThreshold,
       fixedThreshold: s.fixedThreshold,
       outputColorMode: s.outputColorMode,
+      independentSplitFrames: s.independentSplitFrames,
     };
     set({
       pageOverrides: { ...state.pageOverrides, [state.currentPage]: override },
@@ -397,6 +417,7 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
       useAdaptiveThreshold: override.useAdaptiveThreshold,
       fixedThreshold: override.fixedThreshold,
       outputColorMode: override.outputColorMode,
+      independentSplitFrames: override.independentSplitFrames,
     };
   },
 
@@ -627,6 +648,7 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
       settings: { ...effective },
       pageOverrides: {},
       applyToAllNotification: Date.now(),
+      settingsVersion: state.settingsVersion + 1,
     });
   },
 
@@ -635,7 +657,10 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
       settings: { ...DEFAULT_SETTINGS },
       pageOverrides: {},
       cropRect: { ...FULL_PAGE_RECT },
+      leftCropRect: { ...FULL_PAGE_RECT },
+      rightCropRect: { ...FULL_PAGE_RECT },
       detectedCropRect: null,
+      settingsVersion: get().settingsVersion + 1,
     });
   },
 

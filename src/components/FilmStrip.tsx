@@ -21,6 +21,7 @@ export function FilmStrip() {
   const currentPage = useScoreStore((s) => s.currentPage);
   const setCurrentPage = useScoreStore((s) => s.setCurrentPage);
   const pageOverrides = useScoreStore((s) => s.pageOverrides);
+  const settingsVersion = useScoreStore((s) => s.settingsVersion);
   const insertBlankPage = useScoreStore((s) => s.insertBlankPage);
   const scrollRef = useRef<HTMLDivElement>(null);
   const thumbRenderers = useRef<Map<number, ReturnType<typeof createPageRenderer>>>(new Map());
@@ -97,7 +98,7 @@ export function FilmStrip() {
     return () => {
       thumbRenderers.current.forEach((r) => r.cancel());
     };
-  }, [pdfDoc, pages]);
+  }, [pdfDoc, pages, settingsVersion]);
 
   const handleClick = useCallback(
     (pageIdx: number) => {

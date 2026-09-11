@@ -1,24 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useScoreStore } from '../store/useScoreStore';
 import { createPageRenderer } from '../engine/pdfEngine';
+import { FilmStrip } from './FilmStrip';
 import {
   ChevronLeft,
   ChevronRight,
   Trash2,
   Settings,
-  Download,
-  Upload,
+  Undo2,
+  LayoutGrid
 } from 'lucide-react';
 
 /**
- * MobileLayout — モバイル完全専用設計 (画面幅 768px 未満)
- *
- * ui-ux-pro-workstation skill §3:
- * - 100dvh + iOS Safe Area 厳守
- * - フルスクリーンスコアプレビュー
- * - 引き出し式ボトムシート（Drawer）
- * - フローティングバー: [◀] [ページ番号] [▶] [削除] [設定]
- * - ピンチズーム + スワイプページ送り（基本タッチ実装）
+ * MobileLayout — モバイル完全専用設計
  */
 export function MobileLayout() {
   const pdfDoc = useScoreStore((s) => s.pdfDoc);
@@ -26,15 +20,23 @@ export function MobileLayout() {
   const currentPage = useScoreStore((s) => s.currentPage);
   const setCurrentPage = useScoreStore((s) => s.setCurrentPage);
   const deletePage = useScoreStore((s) => s.deletePage);
+  const undoAction = useScoreStore((s) => s.undoAction);
+  const historyIndex = useScoreStore((s) => s.historyIndex);
+  
   const isExporting = useScoreStore((s) => s.isExporting);
   const exportPdf = useScoreStore((s) => s.exportPdf);
   const loadPdfFromFile = useScoreStore((s) => s.loadPdfFromFile);
   const pdfFileName = useScoreStore((s) => s.pdfFileName);
+  const settingsVersion = useScoreStore((s) => s.settingsVersion);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rendererRef = useRef(createPageRenderer());
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  
+  const [activeSheet, setActiveSheet] = useState<'none' | 'settings' | 'thumbnails'>('none');
+  
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
 
   // ── フルスクリーンPDF描画 ─────────────────────────────────────
   useEffect(() => {
@@ -46,7 +48,6 @@ export function MobileLayout() {
     const renderPage = async () => {
       const pageEntry = pages[currentPage];
       if (!pageEntry || pageEntry.isBlank || pageEntry.deleted) {
-        // 白紙/削除ページはキャンバスをクリア
         const ctx = canvas.getContext('2d');
         if (ctx) {
           canvas.width = window.innerWidth;
@@ -88,44 +89,73 @@ export function MobileLayout() {
       cancelled = true;
       rendererRef.current.cancel();
     };
-  }, [pdfDoc, currentPage, pages]);
+  }, [pdfDoc, currentPage, pages, settingsVersion]); // settingsVersion を監視して再描画
 
-  // ── タッチスワイプ ────────────────────────────────────────────
-  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+  // ── タッチ＆ジェスチャー処理 ────────────────────────────────────
+  const touchStartRef = useRef<{ 
+    x: number; y: number; 
+    pointers: { id: number; x: number; y: number }[];
+    initialDist?: number;
+    initialZoom?: number;
+  } | null>(null);
+
+  const getDistance = (p1: {x: number, y: number}, p2: {x: number, y: number}) => {
+    return Math.hypot(p2.x - p1.x, p2.y - p1.y);
+  };
 
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    if (e.touches.length === 1) {
-      touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    const pointers = Array.from(e.touches).map(t => ({ id: t.identifier, x: t.clientX, y: t.clientY }));
+    touchStartRef.current = {
+      x: pointers[0].x,
+      y: pointers[0].y,
+      pointers
+    };
+    if (pointers.length === 2) {
+      touchStartRef.current.initialDist = getDistance(pointers[0], pointers[1]);
+      touchStartRef.current.initialZoom = zoom;
     }
-  }, []);
+  }, [zoom]);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (!touchStartRef.current) return;
+    const pointers = Array.from(e.touches).map(t => ({ id: t.identifier, x: t.clientX, y: t.clientY }));
+    
+    if (pointers.length === 2 && touchStartRef.current.initialDist && touchStartRef.current.initialZoom) {
+      // ピンチズーム
+      const currentDist = getDistance(pointers[0], pointers[1]);
+      const scale = currentDist / touchStartRef.current.initialDist;
+      const newZoom = Math.max(1, Math.min(5, touchStartRef.current.initialZoom * scale));
+      setZoom(newZoom);
+    } else if (pointers.length === 1 && zoom > 1) {
+      // パン
+      const dx = pointers[0].x - touchStartRef.current.x;
+      const dy = pointers[0].y - touchStartRef.current.y;
+      setPan(prev => ({ x: prev.x + dx, y: prev.y + dy }));
+      touchStartRef.current.x = pointers[0].x;
+      touchStartRef.current.y = pointers[0].y;
+    }
+  }, [zoom]);
 
   const handleTouchEnd = useCallback(
     (e: React.TouchEvent) => {
       if (!touchStartRef.current || e.changedTouches.length !== 1) return;
+      if (zoom > 1) return; // ズーム中はスワイプページ送りを無効化
+      
       const dx = e.changedTouches[0].clientX - touchStartRef.current.x;
       const dy = e.changedTouches[0].clientY - touchStartRef.current.y;
 
-      // 横方向のスワイプが縦方向より大きい場合のみ
+      // スワイプ判定 (横スクロール)
       if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 50) {
-        if (dx < 0) {
-          // 左スワイプ → 次ページ
+        if (dx < 0 && currentPage < pages.length - 1) {
           setCurrentPage(currentPage + 1);
-        } else {
-          // 右スワイプ → 前ページ
+        } else if (dx > 0 && currentPage > 0) {
           setCurrentPage(currentPage - 1);
         }
       }
       touchStartRef.current = null;
     },
-    [currentPage, setCurrentPage],
+    [currentPage, pages.length, setCurrentPage, zoom],
   );
-
-  const handlePrev = useCallback(() => setCurrentPage(currentPage - 1), [currentPage, setCurrentPage]);
-  const handleNext = useCallback(() => setCurrentPage(currentPage + 1), [currentPage, setCurrentPage]);
-
-  const handleDelete = useCallback(() => {
-    deletePage(currentPage);
-  }, [currentPage, deletePage]);
 
   const handleFileSelect = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -136,7 +166,8 @@ export function MobileLayout() {
   );
 
   const activeCount = pages.filter((p) => !p.deleted).length;
-  const pageLabel = pages.length > 0 ? `${currentPage + 1} / ${pages.length}` : '—';
+  const pageLabel = pages.length > 0 ? `P. ${currentPage + 1} / ${pages.length}` : '—';
+  const canUndo = historyIndex >= 0;
 
   return (
     <div
@@ -144,7 +175,7 @@ export function MobileLayout() {
         display: 'flex',
         flexDirection: 'column',
         width: '100vw',
-        height: '100dvh',
+        height: '100dvh', // 100dvh でアドレスバー対応
         overflow: 'hidden',
         background: 'var(--color-base)',
         paddingTop: 'env(safe-area-inset-top, 0px)',
@@ -153,35 +184,41 @@ export function MobileLayout() {
         paddingRight: 'env(safe-area-inset-right, 0px)',
       }}
     >
-      {/* ── ヘッダー ────────────────────────────────── */}
+      {/* ── ミニマル上部バー ────────────────────────────────── */}
       <header
         style={{
-          height: '48px',
-          minHeight: '48px',
+          height: '44px',
+          minHeight: '44px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
           padding: '0 12px',
           borderBottom: '1px solid var(--color-border)',
-          background: 'var(--color-panel)',
-          flexShrink: 0,
+          background: 'rgba(23, 25, 33, 0.8)',
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)',
+          zIndex: 10,
         }}
       >
         <span
           style={{
-            fontSize: '14px',
-            fontWeight: 600,
+            fontSize: '13px',
+            fontWeight: 500,
             color: 'var(--color-text)',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
-            maxWidth: '60%',
+            maxWidth: '50%',
           }}
         >
           {pdfFileName || 'Score Optimizer'}
         </span>
+        
+        <span style={{ fontSize: '12px', color: 'var(--color-text-dim)', fontVariantNumeric: 'tabular-nums' }}>
+          {pageLabel}
+        </span>
 
-        <div style={{ display: 'flex', gap: '6px' }}>
+        <div style={{ display: 'flex', gap: '8px' }}>
           <input
             ref={fileInputRef}
             type="file"
@@ -189,27 +226,30 @@ export function MobileLayout() {
             onChange={handleFileSelect}
             style={{ display: 'none' }}
           />
-          <button
-            className="btn btn-sm"
-            onClick={() => fileInputRef.current?.click()}
-            aria-label="PDF追加"
-          >
-            <Upload size={14} />
-          </button>
-          <button
-            className="btn btn-sm btn-accent"
-            onClick={exportPdf}
-            disabled={isExporting || !pdfDoc}
-            aria-label="300DPI出力"
-          >
-            <Download size={14} />
-          </button>
+          {!pdfDoc ? (
+            <button
+              className="btn btn-sm btn-accent"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              PDF読込
+            </button>
+          ) : (
+            <button
+              className="btn btn-sm btn-accent"
+              onClick={exportPdf}
+              disabled={isExporting}
+              style={{ padding: '0 12px' }}
+            >
+              出力
+            </button>
+          )}
         </div>
       </header>
 
-      {/* ── フルスクリーンキャンバス ────────────────── */}
+      {/* ── 中央タッチキャンバス ────────────────── */}
       <div
         onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
         style={{
           flex: 1,
@@ -217,8 +257,8 @@ export function MobileLayout() {
           alignItems: 'center',
           justifyContent: 'center',
           overflow: 'hidden',
-          background: '#111318',
-          touchAction: 'pan-y pinch-zoom',
+          background: '#0a0b0e',
+          touchAction: 'none', // ブラウザネイティブのスクロールを無効化
         }}
       >
         {!pdfDoc ? (
@@ -231,212 +271,295 @@ export function MobileLayout() {
               color: 'var(--color-text-dim)',
               fontSize: '14px',
               textAlign: 'center',
-              padding: '20px',
             }}
           >
             <div style={{ fontSize: '48px', opacity: 0.3 }}>🎵</div>
-            <p>PDF をドラッグ＆ドロップ<br />または上部ボタンから選択</p>
+            <p>PDF を選択してください</p>
           </div>
         ) : (
-          <canvas
-            ref={canvasRef}
-            style={{ maxWidth: '100%', maxHeight: '100%' }}
-          />
+          <div
+            style={{
+              transform: `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`,
+              transition: zoom === 1 ? 'transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)' : 'none',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '100%',
+              height: '100%'
+            }}
+          >
+            <canvas
+              ref={canvasRef}
+              style={{ maxWidth: '100%', maxHeight: '100%' }}
+            />
+          </div>
         )}
       </div>
 
-      {/* ── フローティングアクションバー ──────────── */}
+      {/* ── 下部フローティングアクションバー ──────────── */}
       {pdfDoc && (
-        <div
-          style={{
-            height: '56px',
-            minHeight: '56px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '8px',
-            padding: '0 16px',
-            borderTop: '1px solid var(--color-border)',
-            background: 'var(--color-panel)',
-            flexShrink: 0,
-          }}
-        >
-          <button
-            className="btn btn-sm"
-            onClick={handlePrev}
-            disabled={currentPage <= 0}
-            aria-label="前のページ"
-            style={{ padding: '8px 12px' }}
-          >
-            <ChevronLeft size={18} />
-          </button>
-
-          <span
-            style={{
-              fontSize: '14px',
-              fontWeight: 600,
-              color: 'var(--color-text)',
-              minWidth: '80px',
-              textAlign: 'center',
-              fontVariantNumeric: 'tabular-nums',
-            }}
-          >
-            {pageLabel}
-          </span>
-
-          <button
-            className="btn btn-sm"
-            onClick={handleNext}
-            disabled={currentPage >= pages.length - 1}
-            aria-label="次のページ"
-            style={{ padding: '8px 12px' }}
-          >
-            <ChevronRight size={18} />
-          </button>
-
-          <div style={{ width: '1px', height: '24px', background: 'var(--color-border)', margin: '0 4px' }} />
-
-          <button
-            className="btn btn-sm"
-            onClick={handleDelete}
-            disabled={activeCount <= 1}
-            aria-label="ページ削除"
-            style={{ padding: '8px', color: 'var(--color-danger)' }}
-          >
-            <Trash2 size={16} />
-          </button>
-
-          <button
-            className="btn btn-sm"
-            onClick={() => setDrawerOpen(!drawerOpen)}
-            aria-label="設定"
-            style={{ padding: '8px' }}
-          >
-            <Settings size={16} />
-          </button>
-        </div>
-      )}
-
-      {/* ── ボトムシートDrawer ──────────────────────── */}
-      {drawerOpen && (
-        <div
-          style={{
-            position: 'fixed',
-            bottom: 0,
-            left: 0,
-            right: 0,
-            maxHeight: '60dvh',
-            overflowY: 'auto',
-            background: 'var(--color-panel)',
-            borderTop: '1px solid var(--color-border)',
-            borderRadius: '16px 16px 0 0',
-            zIndex: 100,
-            paddingBottom: 'env(safe-area-inset-bottom, 0px)',
-            boxShadow: '0 -8px 32px rgba(0,0,0,0.4)',
-          }}
-        >
-          {/* Drawer handle */}
+        <div style={{
+          position: 'absolute',
+          bottom: '24px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 20,
+        }}>
           <div
             style={{
               display: 'flex',
-              justifyContent: 'center',
-              padding: '8px 0',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '6px',
+              background: 'rgba(30, 33, 43, 0.85)',
+              backdropFilter: 'blur(12px)',
+              WebkitBackdropFilter: 'blur(12px)',
+              borderRadius: '999px',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+              border: '1px solid rgba(255,255,255,0.1)',
             }}
           >
-            <div
-              style={{
-                width: '40px',
-                height: '4px',
-                borderRadius: '2px',
-                background: 'var(--color-border-hover)',
-              }}
-            />
-          </div>
-
-          <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {/* 用紙選択 */}
-            <div>
-              <div className="section-title">用紙サイズ</div>
-              <select
-                value={useScoreStore.getState().selectedPaper}
-                onChange={(e) => useScoreStore.getState().setSelectedPaper(e.target.value as any)}
-                style={{
-                  width: '100%',
-                  padding: '8px',
-                  borderRadius: '8px',
-                  background: 'var(--color-surface)',
-                  color: 'var(--color-text)',
-                  border: '1px solid var(--color-border)',
-                }}
-              >
-                <option value="a4_portrait">A4 縦</option>
-                <option value="b4_portrait">B4 縦 (日本のオケ標準)</option>
-                <option value="kiku_music">菊倍判 (楽譜標準)</option>
-                <option value="a3_landscape">A3 横 (見開きスコア)</option>
-                <option value="a3_portrait">A3 縦 (総譜)</option>
-                <option value="us_letter">US Letter</option>
-                <option value="custom">カスタム (mm入力)</option>
-              </select>
-            </div>
-
-            {/* モード */}
-            <div>
-              <div className="section-title">ページ処理</div>
-              <div className="radio-group" style={{ display: 'flex' }}>
-                <div
-                  className={`radio-option ${useScoreStore.getState().settings.pageProcessingMode === 'spread_split' ? 'active' : ''}`}
-                  onClick={() => useScoreStore.getState().updateSettings({ pageProcessingMode: 'spread_split' })}
-                >見開き分割</div>
-                <div
-                  className={`radio-option ${useScoreStore.getState().settings.pageProcessingMode === 'single_fit' ? 'active' : ''}`}
-                  onClick={() => useScoreStore.getState().updateSettings({ pageProcessingMode: 'single_fit' })}
-                >単ページ</div>
-              </div>
-            </div>
-
-            {/* 自動クロップ */}
-            <div>
-              <div className="section-title">自動クロップ</div>
-              <button
-                className="btn btn-green"
-                onClick={() => {
-                  useScoreStore.getState().detectBlackMargins();
-                  setDrawerOpen(false);
-                }}
-                style={{ width: '100%', marginBottom: '8px' }}
-              >✨ 黒枠を自動検出</button>
-              <label className="checkbox-row">
-                <input
-                  type="checkbox"
-                  checked={useScoreStore.getState().settings.autoCropEnabled}
-                  onChange={(e) => useScoreStore.getState().updateSettings({ autoCropEnabled: e.target.checked })}
-                />
-                自動トリミングを使う
-              </label>
-            </div>
-
-            {/* 一括適用 */}
-            <div>
-              <button
-                className="btn"
-                onClick={() => {
-                  useScoreStore.getState().applySettingsToAllPages();
-                  setDrawerOpen(false);
-                }}
-                style={{ width: '100%' }}
-              >全ページに適用</button>
-            </div>
+            <button
+              className="btn btn-sm btn-icon"
+              onClick={() => setCurrentPage(currentPage - 1)}
+              disabled={currentPage <= 0}
+              style={{ borderRadius: '50%', width: '40px', height: '40px' }}
+            >
+              <ChevronLeft size={20} />
+            </button>
 
             <button
-              className="btn btn-accent"
-              onClick={() => setDrawerOpen(false)}
-              style={{ width: '100%', marginTop: '8px' }}
+              className="btn btn-sm btn-icon"
+              onClick={() => setCurrentPage(currentPage + 1)}
+              disabled={currentPage >= pages.length - 1}
+              style={{ borderRadius: '50%', width: '40px', height: '40px' }}
             >
-              完了
+              <ChevronRight size={20} />
+            </button>
+
+            <div style={{ width: '1px', height: '20px', background: 'rgba(255,255,255,0.2)', margin: '0 4px' }} />
+
+            <button
+              className={`btn btn-sm btn-icon ${activeSheet === 'settings' ? 'btn-accent' : ''}`}
+              onClick={() => setActiveSheet(activeSheet === 'settings' ? 'none' : 'settings')}
+              style={{ borderRadius: '50%', width: '40px', height: '40px' }}
+            >
+              <Settings size={18} />
+            </button>
+
+            <button
+              className={`btn btn-sm btn-icon ${activeSheet === 'thumbnails' ? 'btn-accent' : ''}`}
+              onClick={() => setActiveSheet(activeSheet === 'thumbnails' ? 'none' : 'thumbnails')}
+              style={{ borderRadius: '50%', width: '40px', height: '40px' }}
+            >
+              <LayoutGrid size={18} />
+            </button>
+
+            <div style={{ width: '1px', height: '20px', background: 'rgba(255,255,255,0.2)', margin: '0 4px' }} />
+
+            <button
+              className="btn btn-sm btn-icon"
+              onClick={() => undoAction()}
+              disabled={!canUndo}
+              style={{ borderRadius: '50%', width: '40px', height: '40px' }}
+            >
+              <Undo2 size={16} />
+            </button>
+
+            <button
+              className="btn btn-sm btn-icon"
+              onClick={() => deletePage(currentPage)}
+              disabled={activeCount <= 1}
+              style={{ borderRadius: '50%', width: '40px', height: '40px', color: 'var(--color-danger)' }}
+            >
+              <Trash2 size={18} />
             </button>
           </div>
         </div>
       )}
+
+      {/* ── 引き出し式ボトムシート (Drawer) ──────────────────────── */}
+      {activeSheet !== 'none' && (
+        <>
+          {/* バックドロップ (タップで閉じる用) */}
+          <div 
+            onClick={() => setActiveSheet('none')}
+            style={{
+              position: 'fixed', inset: 0,
+              backgroundColor: 'rgba(0,0,0,0.5)',
+              zIndex: 90,
+              animation: 'fadeIn 0.2s ease'
+            }}
+          />
+          
+          <div
+            style={{
+              position: 'fixed',
+              bottom: 0,
+              left: 0,
+              right: 0,
+              maxHeight: '75dvh',
+              background: 'var(--color-panel)',
+              borderTop: '1px solid var(--color-border)',
+              borderRadius: '24px 24px 0 0',
+              zIndex: 100,
+              paddingBottom: 'env(safe-area-inset-bottom, 20px)',
+              boxShadow: '0 -10px 40px rgba(0,0,0,0.5)',
+              display: 'flex',
+              flexDirection: 'column',
+              animation: 'slideUp 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)'
+            }}
+          >
+            {/* Drawer Handle */}
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'center',
+                padding: '12px 0',
+                flexShrink: 0
+              }}
+              onClick={() => setActiveSheet('none')}
+            >
+              <div style={{ width: '40px', height: '5px', borderRadius: '3px', background: 'var(--color-border-hover)' }} />
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', padding: '0 20px 20px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              
+              {activeSheet === 'thumbnails' && (
+                <div style={{ margin: '0 -20px' }}>
+                  <div style={{ padding: '0 20px', marginBottom: '8px', fontSize: '14px', fontWeight: 600 }}>サムネイル一覧</div>
+                  {/* FilmStripコンポーネントを再利用 */}
+                  <FilmStrip />
+                </div>
+              )}
+
+              {activeSheet === 'settings' && (
+                <>
+                  <div style={{ fontSize: '18px', fontWeight: 600 }}>設定</div>
+                  
+                  {/* 用紙選択 */}
+                  <div>
+                    <div className="section-title">用紙サイズ</div>
+                    <select
+                      value={useScoreStore.getState().selectedPaper}
+                      onChange={(e) => useScoreStore.getState().setSelectedPaper(e.target.value as any)}
+                      style={{
+                        width: '100%',
+                        padding: '12px',
+                        borderRadius: '12px',
+                        background: 'var(--color-surface)',
+                        color: 'var(--color-text)',
+                        border: '1px solid var(--color-border)',
+                        fontSize: '16px'
+                      }}
+                    >
+                      <option value="a4_portrait">A4 縦</option>
+                      <option value="b4_portrait">B4 縦 (日本のオケ標準)</option>
+                      <option value="kiku_music">菊倍判 (楽譜標準)</option>
+                      <option value="a3_landscape">A3 横 (見開きスコア)</option>
+                      <option value="a3_portrait">A3 縦 (総譜)</option>
+                      <option value="us_letter">US Letter</option>
+                      <option value="custom">カスタム (mm入力)</option>
+                    </select>
+                  </div>
+
+                  {/* モード */}
+                  <div>
+                    <div className="section-title">ページ処理</div>
+                    <div className="radio-group" style={{ display: 'flex' }}>
+                      <div
+                        className={`radio-option ${useScoreStore.getState().settings.pageProcessingMode === 'spread_split' ? 'active' : ''}`}
+                        onClick={() => useScoreStore.getState().updateSettings({ pageProcessingMode: 'spread_split' })}
+                        style={{ padding: '12px', fontSize: '14px' }}
+                      >見開き分割</div>
+                      <div
+                        className={`radio-option ${useScoreStore.getState().settings.pageProcessingMode === 'single_fit' ? 'active' : ''}`}
+                        onClick={() => useScoreStore.getState().updateSettings({ pageProcessingMode: 'single_fit' })}
+                        style={{ padding: '12px', fontSize: '14px' }}
+                      >単ページ</div>
+                    </div>
+                  </div>
+
+                  {/* 独立枠設定 */}
+                  {useScoreStore.getState().settings.pageProcessingMode === 'spread_split' && (
+                    <label className="checkbox-row" style={{ padding: '8px 0' }}>
+                      <input
+                        type="checkbox"
+                        checked={useScoreStore.getState().settings.independentSplitFrames}
+                        onChange={(e) => useScoreStore.getState().updateSettings({ independentSplitFrames: e.target.checked })}
+                        style={{ transform: 'scale(1.2)' }}
+                      />
+                      <span style={{ fontSize: '15px' }}>左右個別枠を有効にする</span>
+                    </label>
+                  )}
+
+                  {/* 自動クロップ */}
+                  <div>
+                    <div className="section-title">自動クロップ</div>
+                    <button
+                      className="btn btn-green"
+                      onClick={() => {
+                        useScoreStore.getState().detectBlackMargins();
+                        setActiveSheet('none');
+                      }}
+                      style={{ width: '100%', marginBottom: '12px', padding: '12px', fontSize: '15px' }}
+                    >✨ 黒枠を自動検出</button>
+                    <label className="checkbox-row" style={{ padding: '8px 0' }}>
+                      <input
+                        type="checkbox"
+                        checked={useScoreStore.getState().settings.autoCropEnabled}
+                        onChange={(e) => useScoreStore.getState().updateSettings({ autoCropEnabled: e.target.checked })}
+                        style={{ transform: 'scale(1.2)' }}
+                      />
+                      <span style={{ fontSize: '15px' }}>自動トリミングを使う</span>
+                    </label>
+                  </div>
+
+                  <div style={{ height: '1px', background: 'var(--color-border)', margin: '8px 0' }} />
+
+                  {/* 一括適用 */}
+                  <div>
+                    <button
+                      className="btn btn-accent"
+                      onClick={() => {
+                        useScoreStore.getState().applySettingsToAllPages();
+                        setActiveSheet('none');
+                      }}
+                      style={{ width: '100%', padding: '14px', fontSize: '16px', fontWeight: 'bold' }}
+                    >
+                      現在の設定を全ページに適用
+                    </button>
+                  </div>
+                  
+                  <div>
+                    <button
+                      className="btn"
+                      onClick={() => {
+                        useScoreStore.getState().resetToDefaults();
+                        setActiveSheet('none');
+                      }}
+                      style={{ width: '100%', padding: '12px', fontSize: '14px' }}
+                    >
+                      初期値にリセット
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+      
+      <style>{`
+        @keyframes slideUp {
+          from { transform: translateY(100%); }
+          to { transform: translateY(0); }
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+      `}</style>
     </div>
   );
 }
