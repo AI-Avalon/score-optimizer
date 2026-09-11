@@ -353,20 +353,86 @@ export function MobileLayout() {
             />
           </div>
 
-          <div style={{ padding: '0 16px 16px' }}>
-            <div className="section-title" style={{ marginBottom: '8px' }}>
-              設定
+          <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {/* 用紙選択 */}
+            <div>
+              <div className="section-title">用紙サイズ</div>
+              <select
+                value={useScoreStore.getState().selectedPaper}
+                onChange={(e) => useScoreStore.getState().setSelectedPaper(e.target.value as any)}
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  borderRadius: '8px',
+                  background: 'var(--color-surface)',
+                  color: 'var(--color-text)',
+                  border: '1px solid var(--color-border)',
+                }}
+              >
+                <option value="a4_portrait">A4 縦</option>
+                <option value="b4_portrait">B4 縦 (日本のオケ標準)</option>
+                <option value="kiku_music">菊倍判 (楽譜標準)</option>
+                <option value="a3_landscape">A3 横 (見開きスコア)</option>
+                <option value="a3_portrait">A3 縦 (総譜)</option>
+                <option value="us_letter">US Letter</option>
+                <option value="custom">カスタム (mm入力)</option>
+              </select>
             </div>
-            <p style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '12px' }}>
-              詳細設定はデスクトップ版をご利用ください。
-            </p>
+
+            {/* モード */}
+            <div>
+              <div className="section-title">ページ処理</div>
+              <div className="radio-group" style={{ display: 'flex' }}>
+                <div
+                  className={`radio-option ${useScoreStore.getState().settings.pageProcessingMode === 'spread_split' ? 'active' : ''}`}
+                  onClick={() => useScoreStore.getState().updateSettings({ pageProcessingMode: 'spread_split' })}
+                >見開き分割</div>
+                <div
+                  className={`radio-option ${useScoreStore.getState().settings.pageProcessingMode === 'single_fit' ? 'active' : ''}`}
+                  onClick={() => useScoreStore.getState().updateSettings({ pageProcessingMode: 'single_fit' })}
+                >単ページ</div>
+              </div>
+            </div>
+
+            {/* 自動クロップ */}
+            <div>
+              <div className="section-title">自動クロップ</div>
+              <button
+                className="btn btn-green"
+                onClick={() => {
+                  useScoreStore.getState().detectBlackMargins();
+                  setDrawerOpen(false);
+                }}
+                style={{ width: '100%', marginBottom: '8px' }}
+              >✨ 黒枠を自動検出</button>
+              <label className="checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={useScoreStore.getState().settings.autoCropEnabled}
+                  onChange={(e) => useScoreStore.getState().updateSettings({ autoCropEnabled: e.target.checked })}
+                />
+                自動トリミングを使う
+              </label>
+            </div>
+
+            {/* 一括適用 */}
+            <div>
+              <button
+                className="btn"
+                onClick={() => {
+                  useScoreStore.getState().applySettingsToAllPages();
+                  setDrawerOpen(false);
+                }}
+                style={{ width: '100%' }}
+              >全ページに適用</button>
+            </div>
 
             <button
-              className="btn btn-sm"
+              className="btn btn-accent"
               onClick={() => setDrawerOpen(false)}
-              style={{ width: '100%' }}
+              style={{ width: '100%', marginTop: '8px' }}
             >
-              閉じる
+              完了
             </button>
           </div>
         </div>

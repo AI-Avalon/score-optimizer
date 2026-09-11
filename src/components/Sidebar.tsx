@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useScoreStore } from '../store/useScoreStore';
 import { Sparkles, Save, Trash2, RotateCw, Copy, RefreshCcw } from 'lucide-react';
 import type { PageProcessingMode, PageOrder, OutputColorMode, FrontMatterMode, RotationDeg } from '../types';
@@ -35,6 +35,7 @@ export function Sidebar() {
   const applySettingsToAllPages = useScoreStore((s) => s.applySettingsToAllPages);
   const resetToDefaults = useScoreStore((s) => s.resetToDefaults);
   const pages = useScoreStore((s) => s.pages);
+  const applyToAllNotification = useScoreStore((s) => s.applyToAllNotification);
 
   // ── Helpers ──────────────────────────────────────────────────────
   const radio = useCallback(
@@ -71,6 +72,16 @@ export function Sidebar() {
   );
 
   const hasOverride = currentPage in pageOverrides;
+
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (applyToAllNotification > 0) {
+      setToastMessage(`全 ${pages.length} ページに適用しました`);
+      const timer = setTimeout(() => setToastMessage(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [applyToAllNotification, pages.length]);
 
   if (!sidebarOpen) return null;
 
@@ -312,6 +323,28 @@ export function Sidebar() {
           </div>
         )}
       </div>
+
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div style={{
+          position: 'absolute',
+          bottom: '20px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          background: 'var(--color-green)',
+          color: '#fff',
+          padding: '8px 16px',
+          borderRadius: '8px',
+          fontSize: '12px',
+          fontWeight: 'bold',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+          zIndex: 100,
+          pointerEvents: 'none',
+          whiteSpace: 'nowrap'
+        }}>
+          {toastMessage}
+        </div>
+      )}
     </aside>
   );
 }

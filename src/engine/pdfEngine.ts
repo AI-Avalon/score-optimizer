@@ -156,6 +156,7 @@ export async function renderPageToImageBitmap(
 // ── 300 DPI 用紙判型対応 PDF Export Pipeline ────────────────────────────
 
 export interface ExportOptions {
+  dpi: number;
   cropRect: NormalizedRect;
   pageProcessingMode: PageProcessingMode;
   splitOffsetPercent: number;
@@ -179,12 +180,12 @@ export interface ExportOptions {
   onProgress?: (current: number, total: number, message: string) => void;
 }
 
-export async function exportTo300DpiPdf(
+export async function exportToDpiPdf(
   pdfDoc: PDFDocumentProxy,
   options: ExportOptions,
 ): Promise<Blob> {
   const outPdf = await PDFDocument.create();
-  const DPI_SCALE = 300 / 72;
+  const DPI_SCALE = options.dpi / 72;
   const { paperWidthPt, paperHeightPt, marginPt } = options;
 
   // マージン適用後の安全領域

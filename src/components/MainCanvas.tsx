@@ -26,6 +26,8 @@ export function MainCanvas() {
   const setCropRect = useScoreStore((s) => s.setCropRect);
   const settings = useScoreStore((s) => s.settings);
   const isLoading = useScoreStore((s) => s.isLoading);
+  const isAspectRatioLocked = useScoreStore((s) => s.isAspectRatioLocked);
+  const selectedPaper = useScoreStore((s) => s.selectedPaper);
 
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
   const [dragging, setDragging] = useState<string | null>(null);
@@ -185,7 +187,7 @@ export function MainCanvas() {
       if (dragging === 'split-line') {
         const widthPercent = (normDx / startRect.width) * 100;
         const newOffset = Math.max(-20, Math.min(20, dragStartRef.current.splitOffset + widthPercent));
-        useScoreStore.getState().updateSettings({ splitOffsetPercent: newOffset });
+        useScoreStore.getState().setSplitOffsetPercent(newOffset);
         return;
       }
 
@@ -207,6 +209,52 @@ export function MainCanvas() {
       if (dragging.includes('b')) {
         const newH = Math.max(0.02, Math.min(1 - startRect.y, startRect.height + normDy));
         newRect = { ...newRect, height: newH };
+      }
+
+      // ── Aspect Ratio Lock ──
+      if (isAspectRatioLocked && selectedPaper !== 'custom') {
+        const paperConfig = useScoreStore.getState().getPaperConfig();
+        // Spread is two pages wide
+        const targetRatio = settings.pageProcessingMode === 'spread_split'
+          ? (paperConfig.widthPt * 2) / paperConfig.heightPt
+          : paperConfig.widthPt / paperConfig.heightPt;
+        
+        // Convert normalized width/height to screen px for ratio calculation
+        const pxWidth = newRect.width * canvasSize.width;
+        const pxHeight = newRect.height * canvasSize.height;
+
+        // Determine which axis was primarily modified
+        if (dragging === 'l' || dragging === 'r') {
+          // Width drove the change -> adjust height
+          const reqPxHeight = pxWidth / targetRatio;
+          newRect.height = reqPxHeight / canvasSize.height;
+          // Keep centered vertically if dragging sides
+          const yOffset = (startRect.height - newRect.height) / 2;
+          newRect.y = startRect.y + yOffset;
+        } else if (dragging === 't' || dragging === 'b') {
+          // Height drove the change -> adjust width
+          const reqPxWidth = pxHeight * targetRatio;
+          newRect.width = reqPxWidth / canvasSize.width;
+          const xOffset = (startRect.width - newRect.width) / 2;
+          newRect.x = startRect.x + xOffset;
+        } else {
+          // Corners: prioritize width if x dragged more, else prioritize height
+          if (Math.abs(dx) > Math.abs(dy)) {
+            const reqPxHeight = pxWidth / targetRatio;
+            newRect.height = reqPxHeight / canvasSize.height;
+            if (dragging.includes('t')) newRect.y = startRect.y + startRect.height - newRect.height;
+          } else {
+            const reqPxWidth = pxHeight * targetRatio;
+            newRect.width = reqPxWidth / canvasSize.width;
+            if (dragging.includes('l')) newRect.x = startRect.x + startRect.width - newRect.width;
+          }
+        }
+
+        // Clamp to 0-1
+        newRect.x = Math.max(0, Math.min(1 - newRect.width, newRect.x));
+        newRect.y = Math.max(0, Math.min(1 - newRect.height, newRect.y));
+        newRect.width = Math.min(1, Math.max(0.02, newRect.width));
+        newRect.height = Math.min(1, Math.max(0.02, newRect.height));
       }
 
       setCropRect(newRect);

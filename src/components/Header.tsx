@@ -26,6 +26,10 @@ export function Header() {
   const marginMm = useScoreStore((s) => s.marginMm);
   const setMarginMm = useScoreStore((s) => s.setMarginMm);
   const pdfDoc = useScoreStore((s) => s.pdfDoc);
+  const exportDpi = useScoreStore((s) => s.exportDpi);
+  const setExportDpi = useScoreStore((s) => s.setExportDpi);
+  const isAspectRatioLocked = useScoreStore((s) => s.isAspectRatioLocked);
+  const setIsAspectRatioLocked = useScoreStore((s) => s.setIsAspectRatioLocked);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -122,29 +126,48 @@ export function Header() {
 
         {/* カスタム用紙サイズ入力 */}
         {selectedPaper === 'custom' && (
-          <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-            <input
-              type="number"
-              value={customPaperMm.w}
-              onChange={(e) => setCustomPaperMm(Number(e.target.value) || 210, customPaperMm.h)}
-              style={{ width: '52px' }}
-              placeholder="幅mm"
-              min={50}
-              max={1000}
-            />
-            <span style={{ color: 'var(--color-text-muted)', fontSize: '11px' }}>×</span>
-            <input
-              type="number"
-              value={customPaperMm.h}
-              onChange={(e) => setCustomPaperMm(customPaperMm.w, Number(e.target.value) || 297)}
-              style={{ width: '52px' }}
-              placeholder="高mm"
-              min={50}
-              max={1000}
-            />
-            <span style={{ color: 'var(--color-text-muted)', fontSize: '11px' }}>mm</span>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px', alignItems: 'center', minWidth: 0 }}>
+            <div style={{ display: 'flex', gap: '2px', alignItems: 'center' }}>
+              <input
+                type="number"
+                value={customPaperMm.w}
+                onChange={(e) => setCustomPaperMm(Number(e.target.value) || 210, customPaperMm.h)}
+                style={{ width: '48px', minWidth: 0 }}
+                placeholder="幅"
+                min={50}
+                max={1000}
+              />
+              <span style={{ color: 'var(--color-text-muted)', fontSize: '10px' }}>×</span>
+            </div>
+            <div style={{ display: 'flex', gap: '2px', alignItems: 'center' }}>
+              <input
+                type="number"
+                value={customPaperMm.h}
+                onChange={(e) => setCustomPaperMm(customPaperMm.w, Number(e.target.value) || 297)}
+                style={{ width: '48px', minWidth: 0 }}
+                placeholder="高"
+                min={50}
+                max={1000}
+              />
+              <span style={{ color: 'var(--color-text-muted)', fontSize: '10px' }}>mm</span>
+            </div>
           </div>
         )}
+
+        {/* Aspect Ratio Lock Toggle */}
+        <button
+          className="btn btn-sm"
+          style={{
+            padding: '4px 6px',
+            color: isAspectRatioLocked ? 'var(--color-accent)' : 'var(--color-text-muted)',
+            borderColor: isAspectRatioLocked ? 'var(--color-accent)' : 'var(--color-border)',
+            background: isAspectRatioLocked ? 'rgba(79, 70, 229, 0.1)' : 'transparent',
+          }}
+          onClick={() => setIsAspectRatioLocked(!isAspectRatioLocked)}
+          title={isAspectRatioLocked ? '比率ロック解除' : '比率をロック'}
+        >
+          {isAspectRatioLocked ? '🔒' : '🔓'}
+        </button>
 
         {/* 余白入力 */}
         <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
@@ -177,13 +200,33 @@ export function Header() {
           PDF読込
         </button>
 
+        <select
+          value={exportDpi}
+          onChange={(e) => setExportDpi(Number(e.target.value))}
+          style={{
+            padding: '4px 8px',
+            borderRadius: '6px',
+            border: '1px solid var(--color-border)',
+            background: 'var(--color-surface)',
+            color: 'var(--color-text)',
+            fontSize: '12px',
+            cursor: 'pointer',
+          }}
+        >
+          <option value={150}>150 DPI (軽量)</option>
+          <option value={200}>200 DPI</option>
+          <option value={300}>300 DPI (標準印刷)</option>
+          <option value={400}>400 DPI (高精細)</option>
+          <option value={600}>600 DPI (最高峰)</option>
+        </select>
+
         <button
           className="btn btn-sm btn-accent"
           onClick={exportPdf}
           disabled={isExporting || isLoading || !pdfDoc}
         >
           <Download size={14} />
-          {isExporting ? `${exportProgress}%` : '300 DPI 出力'}
+          {isExporting ? `${exportProgress}%` : 'PDFを出力'}
         </button>
       </div>
     </header>

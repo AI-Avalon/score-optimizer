@@ -82,6 +82,9 @@ interface ScoreState {
   exportProgress: number;
   isLoading: boolean;
   sidebarOpen: boolean;
+  exportDpi: number;
+  isAspectRatioLocked: boolean;
+  applyToAllNotification: number;
 
   // プログレス情報
   loadingProgress: ProgressInfo | null;
@@ -104,6 +107,9 @@ interface ScoreState {
   getEffectiveCropRect: () => NormalizedRect;
   exportPdf: () => Promise<void>;
   setSidebarOpen: (open: boolean) => void;
+  setExportDpi: (dpi: number) => void;
+  setIsAspectRatioLocked: (locked: boolean) => void;
+  setSplitOffsetPercent: (percent: number) => void;
   cleanup: () => void;
 
   // 用紙判型アクション
@@ -176,6 +182,9 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
   exportProgress: 0,
   isLoading: false,
   sidebarOpen: true,
+  exportDpi: 300,
+  isAspectRatioLocked: true,
+  applyToAllNotification: 0,
   loadingProgress: null,
   otsuWorker: null,
   isDetecting: false,
@@ -227,7 +236,18 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
         loadingProgress: null,
       });
 
-      // 自動黒枠検出を発火
+      // 自動黒枠検出と最適なDPIの推定
+      try {
+        const page = await doc.getPage(1) as unknown as { getViewport: (p: {scale: number}) => {width: number} };
+        const vp = page.getViewport({ scale: 1 });
+        // ざっくり推定 (595pt=A4 に対して 2倍以上なら 600DPI相当、など)
+        let estimatedDpi = 300;
+        if (vp.width > 2000) estimatedDpi = 600;
+        else if (vp.width > 1500) estimatedDpi = 400;
+        else if (vp.width < 500) estimatedDpi = 150;
+        set({ exportDpi: estimatedDpi });
+      } catch(e) {}
+
       get().detectBlackMargins();
     } catch (err) {
       console.error('PDF load failed:', err);
@@ -252,6 +272,12 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
     const newSettings = { ...state.settings, ...partial };
     const newCrop = computeCropRect(newSettings, state.detectedCropRect);
     set({ settings: newSettings, cropRect: newCrop });
+  },
+
+  setSplitOffsetPercent: (percent: number) => {
+    // cropRect を再計算・初期化せずに splitOffsetPercent のみ更新
+    const state = get();
+    set({ settings: { ...state.settings, splitOffsetPercent: percent } });
   },
 
   setZoom: (zoom: number) => {
@@ -594,26 +620,14 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
 
   applySettingsToAllPages: () => {
     const state = get();
-    const s = state.settings;
-    const newOverrides: Record<number, PageOverride> = {};
-    for (let i = 0; i < state.pages.length; i++) {
-      newOverrides[i] = {
-        pageProcessingMode: s.pageProcessingMode,
-        splitOffsetPercent: s.splitOffsetPercent,
-        pageOrder: s.pageOrder,
-        blackMarginThreshold: s.blackMarginThreshold,
-        cropPaddingPx: s.cropPaddingPx,
-        autoCropEnabled: s.autoCropEnabled,
-        manualTrimLeftPercent: s.manualTrimLeftPercent,
-        manualTrimRightPercent: s.manualTrimRightPercent,
-        manualTrimTopPercent: s.manualTrimTopPercent,
-        manualTrimBottomPercent: s.manualTrimBottomPercent,
-        useAdaptiveThreshold: s.useAdaptiveThreshold,
-        fixedThreshold: s.fixedThreshold,
-        outputColorMode: s.outputColorMode,
-      };
-    }
-    set({ pageOverrides: newOverrides });
+    const effective = get().getEffectiveSettings(state.currentPage);
+    
+    // 全ページの個別オーバーライドを破棄して、ドキュメント共通設定として適用する
+    set({
+      settings: { ...effective },
+      pageOverrides: {},
+      applyToAllNotification: Date.now(),
+    });
   },
 
   resetToDefaults: () => {
@@ -634,17 +648,18 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
     set({
       isExporting: true,
       exportProgress: 0,
-      loadingProgress: { current: 0, total: state.pages.length, message: '300 DPI PDF 書き出し準備中...' },
+      loadingProgress: { current: 0, total: state.pages.length, message: `${state.exportDpi} DPI PDF 書き出し準備中...` },
     });
 
     try {
-      const { exportTo300DpiPdf, downloadSafeBlob } = await import('../engine/pdfEngine');
+      const { exportToDpiPdf, downloadSafeBlob } = await import('../engine/pdfEngine');
       const paperConfig = get().getPaperConfig();
       const marginPt = convertMmToPt(get().marginMm);
 
-      const blob = await exportTo300DpiPdf(
-        state.pdfDoc as unknown as Parameters<typeof exportTo300DpiPdf>[0],
+      const blob = await exportToDpiPdf(
+        state.pdfDoc as unknown as any,
         {
+          dpi: state.exportDpi,
           cropRect: state.cropRect,
           pageProcessingMode: state.settings.pageProcessingMode,
           splitOffsetPercent: state.settings.splitOffsetPercent,
@@ -682,6 +697,8 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
   },
 
   setSidebarOpen: (open: boolean) => set({ sidebarOpen: open }),
+  setExportDpi: (dpi: number) => set({ exportDpi: dpi }),
+  setIsAspectRatioLocked: (locked: boolean) => set({ isAspectRatioLocked: locked }),
 
   // ── プログレス ────────────────────────────────────────────────
 

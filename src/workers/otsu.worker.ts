@@ -99,44 +99,72 @@ workerSelf.onmessage = (e: MessageEvent<WorkerRequest>) => {
       }
     }
 
-    // ── 黒余白検出 (app.py detect_content_bbox L78-93) ──
-    // blackMarginThreshold より明るいピクセル = コンテンツ
-    const paddingScaled = Math.round(cropPaddingPx * scale);
-    let minX = w;
-    let minY = h;
-    let maxX = 0;
-    let maxY = 0;
-    let found = false;
+    // ── 黒余白検出 ＆ コンテンツ(インク)検出 (research.pdf 改修) ──
+    const skipX = Math.floor(w * 0.03);
+    const skipY = Math.floor(h * 0.03);
 
-    for (let y = 0; y < h; y++) {
-      for (let x = 0; x < w; x++) {
+    let paperMinX = w;
+    let paperMinY = h;
+    let paperMaxX = 0;
+    let paperMaxY = 0;
+    let paperFound = false;
+
+    // 1. スキャナ端の外周ノイズ（外側3%）をスキップし、紙面の白い領域を特定
+    for (let y = skipY; y < h - skipY; y++) {
+      for (let x = skipX; x < w - skipX; x++) {
         if (gray[y * w + x] > blackMarginThreshold) {
-          if (x < minX) minX = x;
-          if (x > maxX) maxX = x;
-          if (y < minY) minY = y;
-          if (y > maxY) maxY = y;
-          found = true;
+          if (x < paperMinX) paperMinX = x;
+          if (x > paperMaxX) paperMaxX = x;
+          if (y < paperMinY) paperMinY = y;
+          if (y > paperMaxY) paperMaxY = y;
+          paperFound = true;
         }
       }
     }
 
     let cropRect: WorkerResponse['cropRect'];
 
-    if (!found) {
+    if (!paperFound) {
       cropRect = { x: 0, y: 0, width: 1, height: 1 };
     } else {
+      // 2. 紙面領域の内側で、大津の閾値より暗い（インク）最外周を検出
+      let inkMinX = w, inkMinY = h, inkMaxX = 0, inkMaxY = 0;
+      let inkFound = false;
+
+      for (let y = paperMinY; y <= paperMaxY; y++) {
+        for (let x = paperMinX; x <= paperMaxX; x++) {
+          if (gray[y * w + x] < bestThreshold) { // bestThreshold より暗い = インク
+            if (x < inkMinX) inkMinX = x;
+            if (x > inkMaxX) inkMaxX = x;
+            if (y < inkMinY) inkMinY = y;
+            if (y > inkMaxY) inkMaxY = y;
+            inkFound = true;
+          }
+        }
+      }
+
+      if (!inkFound) {
+        // インクが見つからない場合は紙面全体をクロップ枠にする
+        inkMinX = paperMinX;
+        inkMaxX = paperMaxX;
+        inkMinY = paperMinY;
+        inkMaxY = paperMaxY;
+      }
+
+      const paddingScaled = Math.round(cropPaddingPx * scale);
+      
       // パディング適用
-      minX = Math.max(0, minX - paddingScaled);
-      minY = Math.max(0, minY - paddingScaled);
-      maxX = Math.min(w - 1, maxX + paddingScaled);
-      maxY = Math.min(h - 1, maxY + paddingScaled);
+      inkMinX = Math.max(0, inkMinX - paddingScaled);
+      inkMinY = Math.max(0, inkMinY - paddingScaled);
+      inkMaxX = Math.min(w - 1, inkMaxX + paddingScaled);
+      inkMaxY = Math.min(h - 1, inkMaxY + paddingScaled);
 
       // Normalized 座標 (0.0–1.0) へ変換
       cropRect = {
-        x: minX / w,
-        y: minY / h,
-        width: (maxX - minX + 1) / w,
-        height: (maxY - minY + 1) / h,
+        x: inkMinX / w,
+        y: inkMinY / h,
+        width: (inkMaxX - inkMinX + 1) / w,
+        height: (inkMaxY - inkMinY + 1) / h,
       };
     }
 

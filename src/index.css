@@ -3,22 +3,22 @@
 /* ── Apple HIG Dark Theme Custom Properties ──────────────────────── */
 
 :root {
-  --color-base: #0d0f12;
+  --color-base: #0B0D13;
   --color-panel: #161922;
-  --color-surface: #1c2029;
-  --color-border: #272b35;
-  --color-border-hover: #3b4150;
-  --color-text: #e2e8f0;
-  --color-text-muted: #94a3b8;
-  --color-text-dim: #64748b;
-  --color-accent: #60a5fa;
-  --color-accent-hover: #93c5fd;
-  --color-green: #4ade80;
-  --color-green-dim: rgba(74, 222, 128, 0.25);
-  --color-orange: #f97316;
-  --color-orange-dim: rgba(249, 115, 22, 0.3);
-  --color-danger: #ef4444;
-  --sidebar-width: 300px;
+  --color-surface: #1F242C;
+  --color-border: #2C313A;
+  --color-border-hover: #3E4551;
+  --color-text: #F1F5F9;
+  --color-text-muted: #94A3B8;
+  --color-text-dim: #64748B;
+  --color-accent: #4F46E5;
+  --color-accent-hover: #6366F1;
+  --color-green: #10B981;
+  --color-green-dim: rgba(16, 185, 129, 0.15);
+  --color-orange: #F59E0B;
+  --color-orange-dim: rgba(245, 158, 11, 0.15);
+  --color-danger: #EF4444;
+  --sidebar-width: 320px;
   --header-height: 52px;
   --filmstrip-height: 100px;
 }
