@@ -115,6 +115,7 @@ interface ScoreState {
   setExportDpi: (dpi: number) => void;
   setIsAspectRatioLocked: (locked: boolean) => void;
   setSplitOffsetPercent: (percent: number) => void;
+  nudgeCropRect: (dx: number, dy: number) => void;
   cleanup: () => void;
 
   // 用紙判型アクション
@@ -343,6 +344,16 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
 
   setRightCropRect: (rect: NormalizedRect) => {
     set({ rightCropRect: rect });
+  },
+
+  nudgeCropRect: (dx: number, dy: number) => {
+    const state = get();
+    // Decide which crop rect to update based on settings or just update cropRect.
+    // Assuming single main frame for mobile.
+    let newRect = { ...state.cropRect };
+    newRect.x = Math.max(0, Math.min(1 - newRect.width, newRect.x + dx));
+    newRect.y = Math.max(0, Math.min(1 - newRect.height, newRect.y + dy));
+    set({ cropRect: newRect, leftCropRect: newRect, rightCropRect: newRect });
   },
 
   // ── 黒枠自動検出 Worker (otsu-worker-tester skill) ──────────────

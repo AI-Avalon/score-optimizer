@@ -13,7 +13,7 @@ import type { NormalizedRect } from '../types';
  * - ドラッグ移動（Translate）対応
  * - キーボード十字キー微調整（Nudge）
  */
-export function MainCanvas() {
+export function ScoreCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef(createPageRenderer());

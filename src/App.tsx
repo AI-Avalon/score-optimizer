@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
-import { MainCanvas } from './components/MainCanvas';
+import { ScoreCanvas } from './components/ScoreCanvas';
 import { FilmStrip } from './components/FilmStrip';
 import { ProgressModal } from './components/ProgressModal';
 import { DropZone } from './components/DropZone';
@@ -96,7 +96,7 @@ export default function App() {
           }}
         >
           <Sidebar />
-          <MainCanvas />
+          <ScoreCanvas />
         </div>
 
         <FilmStrip />

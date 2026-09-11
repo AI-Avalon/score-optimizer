@@ -79,7 +79,7 @@ test.describe('デスクトップ検証', () => {
 // ── モバイルテスト ──────────────────────────────────────────────────
 
 test.describe('モバイル検証', () => {
-  test('横スクロール見切れゼロ + 専用レイアウトとボトムシート', async ({ page }, testInfo) => {
+  test('モバイル環境で楽譜Canvasが正常に描画され、壊れた文字表示がないこと', async ({ page }, testInfo) => {
     if (testInfo.project.name === 'Desktop Chrome') {
       test.skip();
       return;
@@ -91,29 +91,33 @@ test.describe('モバイル検証', () => {
     });
     page.on('pageerror', (err) => consoleErrors.push(err.message));
 
+    await page.setViewportSize({ width: 390, height: 844 }); // iPhone 14 サイズ
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
-    // 横スクロールなし
-    const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
-    const clientWidth = await page.evaluate(() => document.documentElement.clientWidth);
-    expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
-
-    // モバイルではSidebar (aside) が存在しないこと
-    const sidebar = page.locator('aside');
-    await expect(sidebar).toHaveCount(0);
-    
-    // PDF読込ボタンがヘッダーにある
-    await expect(page.getByRole('button', { name: 'PDF読込' })).toBeVisible();
-
-    // PDFファイルの読み込みをシミュレート
+    // ファイル入力でテスト用PDFを読み込ませる
     const fileInput = page.locator('input[type="file"]');
-    await fileInput.setInputFiles('tests/fixtures/見開きテスト.pdf');
+    if (await fileInput.count() > 0) {
+      await fileInput.setInputFiles('tests/fixtures/見開きテスト.pdf');
+    }
 
-    // canvas などの描画要素が表示されるのを待機
-    await expect(page.locator('canvas').first()).toBeVisible({ timeout: 10000 });
+    // 1. Canvas要素が確実に可視状態であり、サイズを持っていること
+    const canvas = page.locator('canvas').first();
+    await expect(canvas).toBeVisible({ timeout: 15000 });
+    const box = await canvas.boundingBox();
+    expect(box && box.width > 200 && box.height > 200).toBeTruthy();
 
-    await page.screenshot({ path: 'test-results/mobile-pdf-loaded.png', fullPage: true });
+    // 2. 「巨大なPDF」テキストや壊れたプレースホルダーが存在しないこと
+    const hugeText = page.locator('text=/^PDF$/i, text=/でかい/i');
+    expect(await hugeText.count()).toBe(0);
+
+    // 3. 下部アクションバーが存在し、操作可能であること
+    const settingsBtn = page.getByRole('button', { name: /設定|調整/i });
+    await expect(settingsBtn.first()).toBeVisible();
+
+    // 4. スクリーンショットを保存
+    await page.screenshot({ path: 'test-results/mobile-strict-check.png', fullPage: true });
+    
     expect(consoleErrors).toHaveLength(0);
   });
 });

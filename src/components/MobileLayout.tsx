@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState, useEffect } from 'react';
 import { useScoreStore } from '../store/useScoreStore';
-import { MainCanvas } from './MainCanvas';
+import { ScoreCanvas } from './ScoreCanvas';
 import { FilmStrip } from './FilmStrip';
 import { useGesture } from '@use-gesture/react';
 import {
@@ -12,9 +12,12 @@ import {
   Trash2,
   FilePlus,
   Copy,
-  RefreshCcw
+  RefreshCcw,
+  Move,
+  Maximize
 } from 'lucide-react';
 import type { PaperPresetKey } from '../types';
+import { FULL_PAGE_RECT } from '../types';
 
 function DecoupledSlider({ label, value, min, max, step, onChange }: { label: string, value: number, min: number, max: number, step: number, onChange: (v: number) => void }) {
   const [localValue, setLocalValue] = useState<number | null>(null);
@@ -50,12 +53,13 @@ function DecoupledSlider({ label, value, min, max, step, onChange }: { label: st
 export function MobileLayout() {
   const {
     pdfDoc, pages, currentPage, setCurrentPage,
-    isExporting, exportPdf, loadPdfFromFile,
+    isExporting, exportPdf, loadPdfFromFile, pdfFileName,
     updateSettings, detectBlackMargins, isDetecting,
     applySettingsToAllPages, applySettingsToRemainingPages, resetToDefaults,
     selectedPaper, setSelectedPaper,
     deletePage, insertBlankPage,
-    zoom, setZoom
+    zoom, setZoom,
+    nudgeCropRect, setCropRect, setLeftCropRect, setRightCropRect
   } = useScoreStore();
 
   const globalSettings = useScoreStore(s => s.settings);
@@ -66,7 +70,7 @@ export function MobileLayout() {
   const removePageOverride = useScoreStore((s) => s.removePageOverride);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [activeSheet, setActiveSheet] = useState<'none' | 'settings' | 'thumbnails'>('none');
+  const [activeSheet, setActiveSheet] = useState<'none' | 'settings' | 'thumbnails' | 'nudge'>('none');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   
   const handleFileSelect = useCallback(
@@ -78,7 +82,7 @@ export function MobileLayout() {
   );
 
   const activeCount = pages.filter((p) => !p.deleted).length;
-  const pageLabel = pages.length > 0 ? `P. ${currentPage + 1}/${pages.length}` : '—';
+  const pageLabel = pages.length > 0 ? `P. ${currentPage + 1} / ${pages.length}` : '—';
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -97,7 +101,19 @@ export function MobileLayout() {
     setActiveSheet('none');
   };
 
-  // Pinch & Swipe gestures via useGesture
+  const doNudge = (dx: number, dy: number) => {
+    nudgeCropRect(dx, dy);
+    if (navigator.vibrate) navigator.vibrate(10);
+  };
+
+  const fitFullScreen = () => {
+    setCropRect({ ...FULL_PAGE_RECT });
+    setLeftCropRect({ ...FULL_PAGE_RECT });
+    setRightCropRect({ ...FULL_PAGE_RECT });
+    if (navigator.vibrate) navigator.vibrate(20);
+    showToast('全画面にフィットさせました');
+  };
+
   const bindGestures = useGesture(
     {
       onPinch: ({ offset: [d] }) => {
@@ -106,10 +122,16 @@ export function MobileLayout() {
       onDrag: ({ direction: [dx], swipe: [swipeX], distance: [distX], cancel }) => {
         if (zoom > 1.05) return; // Only allow page swipe when not heavily zoomed
         if (swipeX === -1 || (dx < 0 && distX > 80)) {
-          if (currentPage < pages.length - 1) setCurrentPage(currentPage + 1);
+          if (currentPage < pages.length - 1) {
+            setCurrentPage(currentPage + 1);
+            if (navigator.vibrate) navigator.vibrate(10);
+          }
           cancel();
         } else if (swipeX === 1 || (dx > 0 && distX > 80)) {
-          if (currentPage > 0) setCurrentPage(currentPage - 1);
+          if (currentPage > 0) {
+            setCurrentPage(currentPage - 1);
+            if (navigator.vibrate) navigator.vibrate(10);
+          }
           cancel();
         }
       }
@@ -148,6 +170,11 @@ export function MobileLayout() {
           pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: '8px'
         }}>
           <span>{pageLabel}</span>
+          {pdfFileName && (
+            <span style={{ opacity: 0.7, maxWidth: '100px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {pdfFileName}
+            </span>
+          )}
           {hasOverride && (
             <span style={{ background: 'var(--color-orange)', color: '#000', fontSize: '10px', padding: '2px 6px', borderRadius: '8px', fontWeight: 800 }}>
               カスタム中
@@ -155,32 +182,43 @@ export function MobileLayout() {
           )}
         </div>
 
-        {hasOverride && (
+        <div style={{ pointerEvents: 'auto', display: 'flex', gap: '8px' }}>
+          {hasOverride && (
+            <button 
+              className="btn btn-sm" 
+              onClick={removePageOverride}
+              style={{ background: 'rgba(255,255,255,0.9)', color: '#000', fontWeight: 700 }}
+            >
+              戻す
+            </button>
+          )}
           <button 
-            className="btn btn-sm" 
-            onClick={removePageOverride}
-            style={{ pointerEvents: 'auto', background: 'rgba(255,255,255,0.9)', color: '#000', fontWeight: 700 }}
+            className="btn btn-sm btn-accent" 
+            onClick={exportPdf}
+            disabled={isExporting || !pdfDoc}
+            style={{ fontWeight: 700 }}
           >
-            全体設定に戻す
+            <Download size={14} style={{ marginRight: '4px' }} /> PDF出力
           </button>
-        )}
+        </div>
       </div>
 
-      {/* ── Main Score Area (Top 85%) ── */}
+      {/* ── Main Score Area ── */}
       <div 
         {...bindGestures()}
         style={{ 
-          height: '85%', 
+          flex: 1, 
+          display: 'flex', // Crucial for inner flex: 1 to work
           position: 'relative',
-          touchAction: 'none' // required for useGesture
+          touchAction: 'none'
         }}
       >
-        <MainCanvas />
+        <ScoreCanvas />
       </div>
 
-      {/* ── Action Bar (Bottom 15%) ── */}
+      {/* ── Action Bar (Bottom Fixed - 56px) ── */}
       <div style={{
-        height: '15%',
+        height: '56px',
         background: 'var(--color-panel)',
         borderTop: '1px solid var(--color-border)',
         display: 'flex',
@@ -188,23 +226,23 @@ export function MobileLayout() {
         justifyContent: 'space-evenly',
         padding: '0 12px'
       }}>
-        <button className="btn btn-icon" onClick={() => setCurrentPage(currentPage - 1)} disabled={currentPage <= 0} style={{ width: '48px', height: '48px', borderRadius: '16px', background: 'var(--color-surface)' }}>
+        <button className="btn btn-icon" aria-label="前" onClick={() => { setCurrentPage(currentPage - 1); if (navigator.vibrate) navigator.vibrate(10); }} disabled={currentPage <= 0} style={{ width: '48px', height: '44px', borderRadius: '12px', background: 'transparent' }}>
           <ChevronLeft size={24} />
         </button>
         
-        <button className="btn btn-icon" onClick={() => setActiveSheet('thumbnails')} style={{ width: '48px', height: '48px', borderRadius: '16px', background: 'var(--color-surface)', color: activeSheet === 'thumbnails' ? 'var(--color-accent)' : '#fff' }}>
-          <LayoutGrid size={24} />
+        <button className="btn btn-icon" aria-label="枠微動" onClick={() => setActiveSheet('nudge')} style={{ width: '48px', height: '44px', borderRadius: '12px', background: activeSheet === 'nudge' ? 'var(--color-surface)' : 'transparent', color: activeSheet === 'nudge' ? 'var(--color-accent)' : '#fff' }}>
+          <Move size={22} />
         </button>
 
-        <button className="btn btn-icon" onClick={() => setActiveSheet('settings')} style={{ width: '64px', height: '64px', borderRadius: '20px', background: 'var(--color-accent)', color: '#fff', boxShadow: '0 8px 24px rgba(79, 70, 229, 0.4)' }}>
-          <Settings size={28} />
+        <button className="btn btn-icon" aria-label="設定" onClick={() => setActiveSheet('settings')} style={{ width: '48px', height: '44px', borderRadius: '12px', background: activeSheet === 'settings' ? 'var(--color-surface)' : 'transparent', color: activeSheet === 'settings' ? 'var(--color-accent)' : '#fff' }}>
+          <Settings size={22} />
         </button>
 
-        <button className="btn btn-icon" onClick={exportPdf} disabled={isExporting || !pdfDoc} style={{ width: '48px', height: '48px', borderRadius: '16px', background: 'var(--color-surface)' }}>
-          <Download size={24} />
+        <button className="btn btn-icon" aria-label="一覧" onClick={() => setActiveSheet('thumbnails')} style={{ width: '48px', height: '44px', borderRadius: '12px', background: activeSheet === 'thumbnails' ? 'var(--color-surface)' : 'transparent', color: activeSheet === 'thumbnails' ? 'var(--color-accent)' : '#fff' }}>
+          <LayoutGrid size={22} />
         </button>
         
-        <button className="btn btn-icon" onClick={() => setCurrentPage(currentPage + 1)} disabled={currentPage >= pages.length - 1} style={{ width: '48px', height: '48px', borderRadius: '16px', background: 'var(--color-surface)' }}>
+        <button className="btn btn-icon" aria-label="次" onClick={() => { setCurrentPage(currentPage + 1); if (navigator.vibrate) navigator.vibrate(10); }} disabled={currentPage >= pages.length - 1} style={{ width: '48px', height: '44px', borderRadius: '12px', background: 'transparent' }}>
           <ChevronRight size={24} />
         </button>
       </div>
@@ -214,7 +252,7 @@ export function MobileLayout() {
         <>
           <div onClick={() => setActiveSheet('none')} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 90, animation: 'fadeIn 0.2s ease' }} />
           <div style={{
-            position: 'fixed', bottom: 0, left: 0, right: 0, maxHeight: '85dvh',
+            position: 'fixed', bottom: '56px', left: 0, right: 0, maxHeight: 'calc(85dvh - 56px)',
             background: 'var(--color-panel)', borderTop: '1px solid var(--color-border)',
             borderRadius: '24px 24px 0 0', zIndex: 100,
             paddingBottom: 'env(safe-area-inset-bottom, 20px)',
@@ -227,6 +265,24 @@ export function MobileLayout() {
 
             <div style={{ flex: 1, overflowY: 'auto', padding: '0 24px 24px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
               
+              {activeSheet === 'nudge' && (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
+                  <div style={{ fontSize: '18px', fontWeight: 700 }}>枠微動 (Nudge)</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+                    <div />
+                    <button className="btn btn-surface" style={{ height: '64px', borderRadius: '16px' }} onClick={() => doNudge(0, -0.005)}>↑</button>
+                    <div />
+                    <button className="btn btn-surface" style={{ height: '64px', borderRadius: '16px' }} onClick={() => doNudge(-0.005, 0)}>←</button>
+                    <button className="btn btn-surface" style={{ height: '64px', borderRadius: '16px' }} onClick={() => doNudge(0, 0.005)}>↓</button>
+                    <button className="btn btn-surface" style={{ height: '64px', borderRadius: '16px' }} onClick={() => doNudge(0.005, 0)}>→</button>
+                  </div>
+                  <button className="btn btn-accent" style={{ marginTop: '16px', width: '100%', padding: '16px', borderRadius: '12px' }} onClick={fitFullScreen}>
+                    <Maximize size={18} style={{ marginRight: '8px' }} />
+                    全画面フィット
+                  </button>
+                </div>
+              )}
+
               {activeSheet === 'thumbnails' && (
                 <div style={{ margin: '0 -24px' }}>
                   <div style={{ padding: '0 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
