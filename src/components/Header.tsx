@@ -33,6 +33,7 @@ export function Header() {
   const currentPage = useScoreStore((s) => s.currentPage);
   const pageOverrides = useScoreStore((s) => s.pageOverrides);
   const removePageOverride = useScoreStore((s) => s.removePageOverride);
+  const setIsHelpOpen = useScoreStore((s) => s.setIsHelpOpen);
 
   const hasOverride = currentPage in pageOverrides;
 
@@ -65,7 +66,7 @@ export function Header() {
     >
       {/* Left: menu toggle + title */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-        <button
+        <button type="button"
           className="btn btn-sm"
           onClick={() => setSidebarOpen(!sidebarOpen)}
           aria-label="Toggle sidebar"
@@ -114,7 +115,7 @@ export function Header() {
             }}>
               個別カスタム中
             </span>
-            <button 
+            <button type="button" 
               className="btn btn-sm" 
               onClick={removePageOverride}
               style={{ fontSize: '10px', padding: '2px 6px', height: 'auto' }}
@@ -183,7 +184,7 @@ export function Header() {
         )}
 
         {/* Aspect Ratio Lock Toggle */}
-        <button
+        <button type="button"
           className="btn btn-sm"
           style={{
             padding: '4px 6px',
@@ -221,7 +222,7 @@ export function Header() {
           onChange={handleFileSelect}
           style={{ display: 'none' }}
         />
-        <button
+        <button type="button"
           className="btn btn-sm"
           onClick={() => fileInputRef.current?.click()}
         >
@@ -249,6 +250,15 @@ export function Header() {
         </select>
 
         <button
+          type="button"
+          className="btn btn-sm"
+          onClick={() => setIsHelpOpen(true)}
+          style={{ background: 'transparent', border: '1px solid var(--color-border)', padding: '4px 8px' }}
+        >
+          ❓ 使い方
+        </button>
+
+        <button type="button"
           className="btn btn-sm btn-accent"
           onClick={exportPdf}
           disabled={isExporting || isLoading || !pdfDoc}

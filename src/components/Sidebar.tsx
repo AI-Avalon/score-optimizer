@@ -117,7 +117,7 @@ export function Sidebar() {
       <div className="settings-section">
         <div className="section-title">一括操作</div>
         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-          <button
+          <button type="button"
             className="btn btn-sm btn-green"
             onClick={applySettingsToAllPages}
             style={{ flex: '1 1 auto' }}
@@ -126,7 +126,7 @@ export function Sidebar() {
             <Copy size={12} />
             全ページに適用
           </button>
-          <button
+          <button type="button"
             className="btn btn-sm"
             onClick={resetToDefaults}
             style={{ flex: '1 1 auto' }}
@@ -134,7 +134,7 @@ export function Sidebar() {
             <RefreshCcw size={12} />
             初期設定にリセット
           </button>
-          <button
+          <button type="button"
             className="btn btn-sm btn-accent"
             onClick={applySettingsToRemainingPages}
             style={{ flex: '1 1 100%' }}
@@ -177,7 +177,7 @@ export function Sidebar() {
           自動トリミングを使う
         </label>
 
-        <button
+        <button type="button"
           className="btn btn-green btn-sm"
           onClick={detectBlackMargins}
           disabled={isDetecting}
@@ -265,7 +265,7 @@ export function Sidebar() {
       <div className="settings-section">
         <div className="section-title">回転</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          <button
+          <button type="button"
             className="btn btn-sm"
             onClick={() => rotatePage(currentPage, 90 as RotationDeg)}
             disabled={pages.length === 0}
@@ -274,7 +274,7 @@ export function Sidebar() {
             現在ページ 90°
           </button>
           <div style={{ display: 'flex', gap: '4px' }}>
-            <button
+            <button type="button"
               className="btn btn-sm"
               onClick={() => rotateOddPages(180 as RotationDeg)}
               style={{ flex: 1 }}
@@ -282,7 +282,7 @@ export function Sidebar() {
             >
               奇数ページ 180°
             </button>
-            <button
+            <button type="button"
               className="btn btn-sm"
               onClick={() => rotateEvenPages(180 as RotationDeg)}
               style={{ flex: 1 }}
@@ -291,7 +291,7 @@ export function Sidebar() {
               偶数ページ 180°
             </button>
           </div>
-          <button
+          <button type="button"
             className="btn btn-sm"
             onClick={() => rotateAllPages(90 as RotationDeg)}
             disabled={pages.length === 0}
@@ -308,11 +308,11 @@ export function Sidebar() {
           現在のページの設定を個別保存できます。
         </p>
         <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
-          <button className="btn btn-sm" onClick={savePageOverride} style={{ flex: 1 }}>
+          <button type="button" className="btn btn-sm" onClick={savePageOverride} style={{ flex: 1 }}>
             <Save size={12} />
             このページを保存
           </button>
-          <button
+          <button type="button"
             className="btn btn-sm"
             onClick={removePageOverride}
             disabled={!hasOverride}
@@ -338,7 +338,7 @@ export function Sidebar() {
                 .map(Number)
                 .sort((a, b) => a - b)
                 .map((pageIdx) => (
-                  <button
+                  <button type="button"
                     key={pageIdx}
                     className="btn btn-sm"
                     onClick={() => setCurrentPage(pageIdx)}

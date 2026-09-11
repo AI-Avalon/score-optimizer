@@ -34,7 +34,7 @@ export function ZoomHUD() {
         userSelect: 'none',
       }}
     >
-      <button
+      <button type="button"
         className="btn-icon btn"
         onClick={handleZoomOut}
         aria-label="Zoom out"
@@ -43,7 +43,7 @@ export function ZoomHUD() {
         <Minus size={14} />
       </button>
 
-      <button
+      <button type="button"
         onClick={handleReset}
         style={{
           padding: '2px 10px',
@@ -61,7 +61,7 @@ export function ZoomHUD() {
         {displayPercent}
       </button>
 
-      <button
+      <button type="button"
         onClick={handleFit}
         style={{
           padding: '2px 8px',
@@ -77,7 +77,7 @@ export function ZoomHUD() {
         Fit
       </button>
 
-      <button
+      <button type="button"
         className="btn-icon btn"
         onClick={handleZoomIn}
         aria-label="Zoom in"

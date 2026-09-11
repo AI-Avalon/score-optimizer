@@ -85,6 +85,7 @@ interface ScoreState {
   exportProgress: number;
   isLoading: boolean;
   sidebarOpen: boolean;
+  isHelpOpen: boolean;
   exportDpi: number;
   isAspectRatioLocked: boolean;
   applyToAllNotification: number;
@@ -112,6 +113,7 @@ interface ScoreState {
   getEffectiveCropRect: () => NormalizedRect;
   exportPdf: () => Promise<void>;
   setSidebarOpen: (open: boolean) => void;
+  setIsHelpOpen: (open: boolean) => void;
   setExportDpi: (dpi: number) => void;
   setIsAspectRatioLocked: (locked: boolean) => void;
   setSplitOffsetPercent: (percent: number) => void;
@@ -192,6 +194,7 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
   exportProgress: 0,
   isLoading: false,
   sidebarOpen: true,
+  isHelpOpen: false,
   exportDpi: 300,
   isAspectRatioLocked: true,
   applyToAllNotification: 0,
@@ -801,6 +804,7 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
   },
 
   setSidebarOpen: (open: boolean) => set({ sidebarOpen: open }),
+  setIsHelpOpen: (open: boolean) => set({ isHelpOpen: open }),
   setExportDpi: (dpi: number) => set({ exportDpi: dpi }),
   setIsAspectRatioLocked: (locked: boolean) => set({ isAspectRatioLocked: locked }),
 

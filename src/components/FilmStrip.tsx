@@ -261,7 +261,7 @@ export function FilmStrip() {
               </div>
 
               {/* 白紙挿入ボタン (+ ボタン) */}
-              <button
+              <button type="button"
                 onClick={() => handleInsertBlank(i)}
                 style={{
                   flexShrink: 0,

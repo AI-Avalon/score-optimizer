@@ -64,8 +64,6 @@ test.describe('デスクトップ検証', () => {
     const applyAllBtn = page.getByRole('button', { name: /全ページに適用/i });
     await expect(applyAllBtn).toBeVisible({ timeout: 5000 });
     
-    // PDFをロードしていないとdisabledかもしれないが、UIが存在することは確認できる
-    
     // 初期設定にリセットボタン
     await expect(page.getByRole('button', { name: /初期設定にリセット/i })).toBeVisible({ timeout: 5000 });
 
@@ -79,7 +77,7 @@ test.describe('デスクトップ検証', () => {
 // ── モバイルテスト ──────────────────────────────────────────────────
 
 test.describe('モバイル検証', () => {
-  test('モバイル環境で楽譜Canvasが正常に描画され、壊れた文字表示がないこと', async ({ page }, testInfo) => {
+  test('ページ送りとモバイル設定・ヘルプモーダルが正しく動作すること', async ({ page }, testInfo) => {
     if (testInfo.project.name === 'Desktop Chrome') {
       test.skip();
       return;
@@ -111,11 +109,56 @@ test.describe('モバイル検証', () => {
     const hugeText = page.locator('text=/^PDF$/i, text=/でかい/i');
     expect(await hugeText.count()).toBe(0);
 
-    // 3. 下部アクションバーが存在し、操作可能であること
-    const settingsBtn = page.getByRole('button', { name: /設定|調整/i });
-    await expect(settingsBtn.first()).toBeVisible();
+    // 【重要検証】ページ送りをしてロード画面に戻らないこと
+    const nextBtn = page.getByRole('button', { name: '次' });
+    await nextBtn.click();
+    
+    // ページ番号表示が P. 2 / N のようになっているか確認
+    const pageLabel = page.locator('text=/P\\. 2 \\/ \\d+/');
+    await expect(pageLabel).toBeVisible({ timeout: 5000 });
 
-    // 4. スクリーンショットを保存
+    // 依然としてCanvasが存在していること（ロード画面に戻っていない）
+    await expect(canvas).toBeVisible({ timeout: 5000 });
+
+    // 3. ボトムシート (設定ドロワー) の検証
+    const settingsBtn = page.getByRole('button', { name: '設定' });
+    await settingsBtn.click();
+
+    // ボトムシート内の要素が可視になる
+    const applyAllBtn = page.getByRole('button', { name: /全ページに適用/ });
+    await expect(applyAllBtn).toBeVisible({ timeout: 5000 });
+    await applyAllBtn.click(); // アクション発火確認
+
+    // 4. 使い方モーダルの検証
+    // 先にシートを閉じる
+    await page.mouse.click(10, 10);
+    await expect(applyAllBtn).toBeHidden({ timeout: 5000 });
+
+    const helpBtn = page.locator('.mobile-layout-root').locator('button').filter({ hasText: '使い方' }).first();
+    if (await helpBtn.count() === 0) {
+       // if icon only, click by aria-label or just try to find it
+       const iconBtn = page.locator('.mobile-layout-root').locator('button').filter({ has: page.locator('svg.lucide-help-circle') }).first();
+       await iconBtn.click();
+    } else {
+       await helpBtn.click();
+    }
+
+    const helpTitle = page.getByRole('heading', { name: '使い方ガイド' });
+    await expect(helpTitle).toBeVisible({ timeout: 5000 });
+
+    // タブ切り替え確認
+    const paperTab = page.getByRole('button', { name: /用紙・製本/ });
+    await paperTab.click();
+    
+    await expect(page.getByText('日本のオーケストラ標準のパート譜サイズです')).toBeVisible({ timeout: 5000 });
+
+    // モーダルを閉じる
+    const closeBtn = page.locator('.btn-icon').filter({ has: page.locator('svg.lucide-x') }).first();
+    await closeBtn.click();
+
+    await expect(helpTitle).toBeHidden({ timeout: 5000 });
+
+    // スクリーンショットを保存
     await page.screenshot({ path: 'test-results/mobile-strict-check.png', fullPage: true });
     
     expect(consoleErrors).toHaveLength(0);

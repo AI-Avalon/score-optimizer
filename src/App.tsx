@@ -6,6 +6,7 @@ import { FilmStrip } from './components/FilmStrip';
 import { ProgressModal } from './components/ProgressModal';
 import { DropZone } from './components/DropZone';
 import { MobileLayout } from './components/MobileLayout';
+import { HelpModal } from './components/HelpModal';
 import { useScoreStore } from './store/useScoreStore';
 
 /**
@@ -69,6 +70,7 @@ export default function App() {
       <DropZone>
         <MobileLayout />
         <ProgressModal />
+        <HelpModal />
       </DropZone>
     );
   }
@@ -103,6 +105,7 @@ export default function App() {
       </div>
 
       <ProgressModal />
+      <HelpModal />
     </DropZone>
   );
 }

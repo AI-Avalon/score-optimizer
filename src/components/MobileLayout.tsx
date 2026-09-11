@@ -14,7 +14,8 @@ import {
   Copy,
   RefreshCcw,
   Move,
-  Maximize
+  Maximize,
+  HelpCircle
 } from 'lucide-react';
 import type { PaperPresetKey } from '../types';
 import { FULL_PAGE_RECT } from '../types';
@@ -68,6 +69,7 @@ export function MobileLayout() {
   const settings = override ? { ...globalSettings, ...override } : globalSettings;
   const hasOverride = !!override;
   const removePageOverride = useScoreStore((s) => s.removePageOverride);
+  const setIsHelpOpen = useScoreStore((s) => s.setIsHelpOpen);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeSheet, setActiveSheet] = useState<'none' | 'settings' | 'thumbnails' | 'nudge'>('none');
@@ -184,7 +186,7 @@ export function MobileLayout() {
 
         <div style={{ pointerEvents: 'auto', display: 'flex', gap: '8px' }}>
           {hasOverride && (
-            <button 
+            <button type="button" 
               className="btn btn-sm" 
               onClick={removePageOverride}
               style={{ background: 'rgba(255,255,255,0.9)', color: '#000', fontWeight: 700 }}
@@ -192,7 +194,10 @@ export function MobileLayout() {
               戻す
             </button>
           )}
-          <button 
+          <button type="button" className="btn btn-sm" onClick={() => setIsHelpOpen(true)} style={{ background: 'rgba(255,255,255,0.2)', padding: '6px' }}>
+            <HelpCircle size={16} />
+          </button>
+          <button type="button" 
             className="btn btn-sm btn-accent" 
             onClick={exportPdf}
             disabled={isExporting || !pdfDoc}
@@ -226,23 +231,23 @@ export function MobileLayout() {
         justifyContent: 'space-evenly',
         padding: '0 12px'
       }}>
-        <button className="btn btn-icon" aria-label="前" onClick={() => { setCurrentPage(currentPage - 1); if (navigator.vibrate) navigator.vibrate(10); }} disabled={currentPage <= 0} style={{ width: '48px', height: '44px', borderRadius: '12px', background: 'transparent' }}>
+        <button type="button" className="btn btn-icon" aria-label="前" onClick={() => { setCurrentPage(currentPage - 1); if (navigator.vibrate) navigator.vibrate(10); }} disabled={currentPage <= 0} style={{ width: '48px', height: '44px', borderRadius: '12px', background: 'transparent' }}>
           <ChevronLeft size={24} />
         </button>
         
-        <button className="btn btn-icon" aria-label="枠微動" onClick={() => setActiveSheet('nudge')} style={{ width: '48px', height: '44px', borderRadius: '12px', background: activeSheet === 'nudge' ? 'var(--color-surface)' : 'transparent', color: activeSheet === 'nudge' ? 'var(--color-accent)' : '#fff' }}>
+        <button type="button" className="btn btn-icon" aria-label="枠微動" onClick={() => setActiveSheet('nudge')} style={{ width: '48px', height: '44px', borderRadius: '12px', background: activeSheet === 'nudge' ? 'var(--color-surface)' : 'transparent', color: activeSheet === 'nudge' ? 'var(--color-accent)' : '#fff' }}>
           <Move size={22} />
         </button>
 
-        <button className="btn btn-icon" aria-label="設定" onClick={() => setActiveSheet('settings')} style={{ width: '48px', height: '44px', borderRadius: '12px', background: activeSheet === 'settings' ? 'var(--color-surface)' : 'transparent', color: activeSheet === 'settings' ? 'var(--color-accent)' : '#fff' }}>
+        <button type="button" className="btn btn-icon" aria-label="設定" onClick={() => setActiveSheet('settings')} style={{ width: '48px', height: '44px', borderRadius: '12px', background: activeSheet === 'settings' ? 'var(--color-surface)' : 'transparent', color: activeSheet === 'settings' ? 'var(--color-accent)' : '#fff' }}>
           <Settings size={22} />
         </button>
 
-        <button className="btn btn-icon" aria-label="一覧" onClick={() => setActiveSheet('thumbnails')} style={{ width: '48px', height: '44px', borderRadius: '12px', background: activeSheet === 'thumbnails' ? 'var(--color-surface)' : 'transparent', color: activeSheet === 'thumbnails' ? 'var(--color-accent)' : '#fff' }}>
+        <button type="button" className="btn btn-icon" aria-label="一覧" onClick={() => setActiveSheet('thumbnails')} style={{ width: '48px', height: '44px', borderRadius: '12px', background: activeSheet === 'thumbnails' ? 'var(--color-surface)' : 'transparent', color: activeSheet === 'thumbnails' ? 'var(--color-accent)' : '#fff' }}>
           <LayoutGrid size={22} />
         </button>
         
-        <button className="btn btn-icon" aria-label="次" onClick={() => { setCurrentPage(currentPage + 1); if (navigator.vibrate) navigator.vibrate(10); }} disabled={currentPage >= pages.length - 1} style={{ width: '48px', height: '44px', borderRadius: '12px', background: 'transparent' }}>
+        <button type="button" className="btn btn-icon" aria-label="次" onClick={() => { setCurrentPage(currentPage + 1); if (navigator.vibrate) navigator.vibrate(10); }} disabled={currentPage >= pages.length - 1} style={{ width: '48px', height: '44px', borderRadius: '12px', background: 'transparent' }}>
           <ChevronRight size={24} />
         </button>
       </div>
@@ -270,13 +275,13 @@ export function MobileLayout() {
                   <div style={{ fontSize: '18px', fontWeight: 700 }}>枠微動 (Nudge)</div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
                     <div />
-                    <button className="btn btn-surface" style={{ height: '64px', borderRadius: '16px' }} onClick={() => doNudge(0, -0.005)}>↑</button>
+                    <button type="button" className="btn btn-surface" style={{ height: '64px', borderRadius: '16px' }} onClick={() => doNudge(0, -0.005)}>↑</button>
                     <div />
-                    <button className="btn btn-surface" style={{ height: '64px', borderRadius: '16px' }} onClick={() => doNudge(-0.005, 0)}>←</button>
-                    <button className="btn btn-surface" style={{ height: '64px', borderRadius: '16px' }} onClick={() => doNudge(0, 0.005)}>↓</button>
-                    <button className="btn btn-surface" style={{ height: '64px', borderRadius: '16px' }} onClick={() => doNudge(0.005, 0)}>→</button>
+                    <button type="button" className="btn btn-surface" style={{ height: '64px', borderRadius: '16px' }} onClick={() => doNudge(-0.005, 0)}>←</button>
+                    <button type="button" className="btn btn-surface" style={{ height: '64px', borderRadius: '16px' }} onClick={() => doNudge(0, 0.005)}>↓</button>
+                    <button type="button" className="btn btn-surface" style={{ height: '64px', borderRadius: '16px' }} onClick={() => doNudge(0.005, 0)}>→</button>
                   </div>
-                  <button className="btn btn-accent" style={{ marginTop: '16px', width: '100%', padding: '16px', borderRadius: '12px' }} onClick={fitFullScreen}>
+                  <button type="button" className="btn btn-accent" style={{ marginTop: '16px', width: '100%', padding: '16px', borderRadius: '12px' }} onClick={fitFullScreen}>
                     <Maximize size={18} style={{ marginRight: '8px' }} />
                     全画面フィット
                   </button>
@@ -288,10 +293,10 @@ export function MobileLayout() {
                   <div style={{ padding: '0 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                     <div style={{ fontSize: '18px', fontWeight: 700 }}>ページ一覧</div>
                     <div style={{ display: 'flex', gap: '8px' }}>
-                      <button className="btn btn-sm" onClick={() => insertBlankPage(currentPage)} style={{ background: 'var(--color-surface)' }}>
+                      <button type="button" className="btn btn-sm" onClick={() => insertBlankPage(currentPage)} style={{ background: 'var(--color-surface)' }}>
                         <FilePlus size={16} /> 白紙
                       </button>
-                      <button className="btn btn-sm" onClick={() => deletePage(currentPage)} disabled={activeCount <= 1} style={{ background: 'var(--color-surface)', color: 'var(--color-danger)' }}>
+                      <button type="button" className="btn btn-sm" onClick={() => deletePage(currentPage)} disabled={activeCount <= 1} style={{ background: 'var(--color-surface)', color: 'var(--color-danger)' }}>
                         <Trash2 size={16} /> 削除
                       </button>
                     </div>
@@ -306,7 +311,7 @@ export function MobileLayout() {
                   
                   {/* Processing Mode */}
                   <div style={{ display: 'flex', gap: '8px', background: 'var(--color-surface)', padding: '6px', borderRadius: '12px' }}>
-                    <button
+                    <button type="button"
                       style={{
                         flex: 1, padding: '12px', borderRadius: '8px', fontSize: '14px', fontWeight: 700,
                         background: settings.pageProcessingMode === 'spread_split' ? 'var(--color-accent)' : 'transparent',
@@ -317,7 +322,7 @@ export function MobileLayout() {
                     >
                       見開き分割
                     </button>
-                    <button
+                    <button type="button"
                       style={{
                         flex: 1, padding: '12px', borderRadius: '8px', fontSize: '14px', fontWeight: 700,
                         background: settings.pageProcessingMode === 'single_fit' ? 'var(--color-accent)' : 'transparent',
@@ -350,7 +355,7 @@ export function MobileLayout() {
                   {/* 自動クロップ & 調整 */}
                   <div style={{ background: 'var(--color-surface)', padding: '20px', borderRadius: '16px', border: '1px solid var(--color-border)' }}>
                     <div className="section-title" style={{ marginBottom: '16px' }}>トリミング調整</div>
-                    <button className="btn btn-green" onClick={() => detectBlackMargins()} disabled={isDetecting} style={{ width: '100%', padding: '14px', fontSize: '16px', fontWeight: 600, marginBottom: '20px', borderRadius: '12px' }}>
+                    <button type="button" className="btn btn-green" onClick={() => detectBlackMargins()} disabled={isDetecting} style={{ width: '100%', padding: '14px', fontSize: '16px', fontWeight: 600, marginBottom: '20px', borderRadius: '12px' }}>
                       {isDetecting ? '検出中...' : '✨ 黒枠を自動検出'}
                     </button>
                     
@@ -384,15 +389,15 @@ export function MobileLayout() {
 
                   {/* 一括・リセット */}
                   <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    <button className="btn btn-accent" onClick={handleApplyAll} style={{ padding: '16px', fontSize: '16px', fontWeight: 700, borderRadius: '12px', boxShadow: '0 4px 16px rgba(79, 70, 229, 0.4)' }}>
+                    <button type="button" className="btn btn-accent" onClick={handleApplyAll} style={{ padding: '16px', fontSize: '16px', fontWeight: 700, borderRadius: '12px', boxShadow: '0 4px 16px rgba(79, 70, 229, 0.4)' }}>
                       <Copy size={18} style={{ marginRight: '8px' }} />
                       全ページに適用
                     </button>
-                    <button className="btn" onClick={handleApplyRemaining} style={{ padding: '16px', fontSize: '16px', fontWeight: 700, borderRadius: '12px', background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+                    <button type="button" className="btn" onClick={handleApplyRemaining} style={{ padding: '16px', fontSize: '16px', fontWeight: 700, borderRadius: '12px', background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
                       <Copy size={18} style={{ marginRight: '8px' }} />
                       このページ以降に適用
                     </button>
-                    <button className="btn" onClick={() => { resetToDefaults(); setActiveSheet('none'); }} style={{ padding: '16px', fontSize: '15px', borderRadius: '12px', background: 'var(--color-surface)', color: 'var(--color-danger)' }}>
+                    <button type="button" className="btn" onClick={() => { resetToDefaults(); setActiveSheet('none'); }} style={{ padding: '16px', fontSize: '15px', borderRadius: '12px', background: 'var(--color-surface)', color: 'var(--color-danger)' }}>
                       <RefreshCcw size={18} style={{ marginRight: '8px' }} />
                       初期値にリセット
                     </button>
@@ -420,7 +425,7 @@ export function MobileLayout() {
       <input ref={fileInputRef} type="file" accept=".pdf" onChange={handleFileSelect} style={{ display: 'none' }} />
       {!pdfDoc && (
         <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--color-base)' }}>
-           <button className="btn btn-accent" onClick={() => fileInputRef.current?.click()} style={{ padding: '16px 32px', fontSize: '18px', borderRadius: '999px' }}>
+           <button type="button" className="btn btn-accent" onClick={() => fileInputRef.current?.click()} style={{ padding: '16px 32px', fontSize: '18px', borderRadius: '999px' }}>
               PDF読込
            </button>
         </div>
