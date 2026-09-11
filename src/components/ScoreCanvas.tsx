@@ -114,28 +114,29 @@ export function ScoreCanvas() {
       }
 
       try {
-        // 1. 古いタスクの確実なキャンセル
+        // 1. 直前タスクのキャンセル
         if (renderTaskRef.current) {
           renderTaskRef.current.cancel();
-          try { await renderTaskRef.current.promise; } catch (e) {}
+          try { await renderTaskRef.current.promise; } catch(e) {}
           renderTaskRef.current = null;
         }
-        // 2. 古いページメモリの解放
         if (pageObjRef.current) {
-          try { 
-            const res = pageObjRef.current.cleanup(); 
-            if (res && typeof res.catch === 'function') res.catch(() => {});
-          } catch (e) {}
+          try { pageObjRef.current.cleanup(); } catch (e) {}
           pageObjRef.current = null;
         }
 
-        // ★最重要: PDF.js ドキュメント内画像キャッシュの強制パージ（WebKit OOMクラッシュ防止）
+        // 2. Worker内の展開画像メモリを強制パージ（WebKit OOMの物理遮断）
         if (typeof (pdfDoc as any).cleanup === 'function') {
-          try { 
-            const res = (pdfDoc as any).cleanup(); 
-            if (res && typeof res.catch === 'function') res.catch(() => {});
-          } catch (e) {}
+          (pdfDoc as any).cleanup();
         }
+
+        const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+        if (isMobile) {
+          // GCを促す微小待機
+          await new Promise((r) => setTimeout(r, 20));
+        }
+
+        if (isCancelled) return;
 
         const page = await (pdfDoc as unknown as { getPage(n: number): Promise<any> }).getPage(pageEntry.sourceIndex + 1);
         if (isCancelled) {
@@ -144,9 +145,8 @@ export function ScoreCanvas() {
         }
         pageObjRef.current = page;
 
-        // 3. モバイルでの解像度クランプ (1.25倍に抑えてメモリクラッシュを物理防御)
-        const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
-        const dpr = isMobile ? Math.min(window.devicePixelRatio || 1, 1.25) : Math.min(window.devicePixelRatio || 1, 2.0);
+        // 3. モバイルでの解像度クランプ (1.2倍に抑えてメモリクラッシュを物理防御)
+        const dpr = isMobile ? Math.min(window.devicePixelRatio || 1, 1.2) : Math.min(window.devicePixelRatio || 1, 2.0);
 
         const unscaledViewport = page.getViewport({ scale: 1.0 });
         const fitScale = Math.min(containerWidth / unscaledViewport.width, containerHeight / unscaledViewport.height);
@@ -156,7 +156,7 @@ export function ScoreCanvas() {
         const viewport = page.getViewport({ scale: scale * dpr });
 
         if (isMobile) {
-          // モバイル: 単一Canvas直接描画（メモリ消費最小化）
+          // 【モバイル】単一Canvas直接描画（メモリ消費最小化）
           canvas.width = viewport.width;
           canvas.height = viewport.height;
           canvas.style.width = `${viewport.width / dpr}px`;
@@ -176,7 +176,7 @@ export function ScoreCanvas() {
           await task.promise;
           setCanvasSize({ width: canvas.width / dpr, height: canvas.height / dpr });
         } else {
-          // PC: ダブルバッファリング（白紙チラつきゼロを維持）
+          // 【PC】ダブルバッファリング（白紙チラつきゼロを維持）
           const offscreen = document.createElement('canvas');
           offscreen.width = viewport.width;
           offscreen.height = viewport.height;

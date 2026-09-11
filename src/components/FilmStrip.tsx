@@ -42,13 +42,18 @@ export function FilmStrip() {
     let isCancelled = false;
     const renderThumbs = async () => {
       const newUrls = new Map<number, string>();
+      const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
       
-      // 前後ページ優先などの高度なソートも可能だが、まずは直列化
       for (let i = 0; i < pages.length; i++) {
         if (isCancelled) break;
         const page = pages[i];
 
         if (page.isBlank || page.deleted) {
+          continue;
+        }
+
+        // モバイル環境では前後2ページのみに限定（メモリ節約）
+        if (isMobile && Math.abs(i - currentPage) > 2) {
           continue;
         }
 
@@ -61,10 +66,11 @@ export function FilmStrip() {
         try {
           const pdfPage = await (pdfDoc as unknown as { getPage(n: number): Promise<Parameters<ReturnType<typeof createPageRenderer>['render']>[0]> }).getPage(page.sourceIndex + 1);
           const defaultVp = pdfPage.getViewport({ scale: 1 });
-          const scale = Math.min(
-            THUMB_WIDTH / defaultVp.width,
-            THUMB_HEIGHT / defaultVp.height,
-          ) * 2; // 2x for sharpness
+          
+          // モバイル時は極小スケール(0.15)固定
+          const scale = isMobile 
+            ? 0.15 
+            : Math.min(THUMB_WIDTH / defaultVp.width, THUMB_HEIGHT / defaultVp.height) * 2;
           
           const tempCanvas = document.createElement('canvas');
           tempCanvas.width = defaultVp.width * scale;
@@ -75,7 +81,7 @@ export function FilmStrip() {
             newUrls.set(i, tempCanvas.toDataURL('image/jpeg', 0.5));
           }
           
-          // Force memory disposal
+          // Force memory disposal (作業用Canvas即座破棄)
           tempCanvas.width = 0;
           tempCanvas.height = 0;
           try {
@@ -83,8 +89,9 @@ export function FilmStrip() {
               pdfPage.cleanup();
             }
           } catch (e) {}
-          // UIスレッドとGCに制御を戻す (モバイルクラッシュ防止)
-          await new Promise(r => setTimeout(r, 30));
+          
+          // UIスレッドとGCに制御を戻す (直列化)
+          await new Promise(r => setTimeout(r, isMobile ? 60 : 30));
           
           if (!isCancelled) {
             setThumbUrls(new Map(newUrls)); // 逐次描画を反映
@@ -101,7 +108,7 @@ export function FilmStrip() {
       isCancelled = true;
       thumbRenderers.current.forEach((r) => r.cancel());
     };
-  }, [pdfDoc, pages, settingsVersion]);
+  }, [pdfDoc, pages, settingsVersion, currentPage]);
 
   const handleClick = useCallback(
     (pageIdx: number) => {
@@ -188,7 +195,9 @@ export function FilmStrip() {
                     }}
                   />
                 ) : (
-                  <div style={{ width: '100%', height: '100%', background: '#1a1d24' }} />
+                  <div style={{ width: '100%', height: '100%', background: '#1a1d24', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.4)', fontSize: '12px', fontWeight: 'bold' }}>
+                    P. {i + 1}
+                  </div>
                 )}
 
                 {/* Page number */}
