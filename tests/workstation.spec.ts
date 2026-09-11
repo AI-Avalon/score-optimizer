@@ -21,6 +21,16 @@ test.describe('デスクトップ検証', () => {
     const emptyState = page.getByText('PDF をドラッグ＆ドロップ');
     await expect(emptyState).toBeVisible({ timeout: 10000 });
 
+    // PDFファイルの読み込みをシミュレート
+    const fileInput = page.locator('input[type="file"]');
+    await fileInput.setInputFiles('tests/fixtures/見開きテスト.pdf');
+
+    // 読み込み完了を待機
+    await expect(emptyState).toBeHidden({ timeout: 10000 });
+    
+    // canvas などの描画要素が表示されるのを待機
+    await expect(page.locator('canvas').first()).toBeVisible({ timeout: 10000 });
+
     const paperSelect = page.locator('[data-testid="paper-select"]');
     await expect(paperSelect).toBeVisible({ timeout: 5000 });
 
@@ -31,7 +41,7 @@ test.describe('デスクトップ検証', () => {
     const clientWidth = await page.evaluate(() => document.documentElement.clientWidth);
     expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
 
-    await page.screenshot({ path: 'test-results/desktop-initial.png', fullPage: true });
+    await page.screenshot({ path: 'test-results/desktop-pdf-loaded.png', fullPage: true });
     expect(consoleErrors).toHaveLength(0);
   });
 
@@ -96,7 +106,14 @@ test.describe('モバイル検証', () => {
     // PDF読込ボタンがヘッダーにある
     await expect(page.getByRole('button', { name: 'PDF読込' })).toBeVisible();
 
-    await page.screenshot({ path: 'test-results/mobile-initial.png', fullPage: true });
+    // PDFファイルの読み込みをシミュレート
+    const fileInput = page.locator('input[type="file"]');
+    await fileInput.setInputFiles('tests/fixtures/見開きテスト.pdf');
+
+    // canvas などの描画要素が表示されるのを待機
+    await expect(page.locator('canvas').first()).toBeVisible({ timeout: 10000 });
+
+    await page.screenshot({ path: 'test-results/mobile-pdf-loaded.png', fullPage: true });
     expect(consoleErrors).toHaveLength(0);
   });
 });
