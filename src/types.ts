@@ -228,7 +228,7 @@ export const DEFAULT_SETTINGS: ProcessSettings = {
   pageOrder: 'left_to_right',
   blackMarginThreshold: 20,
   cropPaddingPx: 8,
-  autoCropEnabled: true,
+  autoCropEnabled: false,
   manualTrimLeftPercent: 0.0,
   manualTrimRightPercent: 0.0,
   manualTrimTopPercent: 0.0,
