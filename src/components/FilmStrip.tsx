@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import { useScoreStore } from '../store/useScoreStore';
 import { createPageRenderer } from '../engine/pdfEngine';
 import { Plus } from 'lucide-react';
@@ -25,7 +25,7 @@ export function FilmStrip() {
   const insertBlankPage = useScoreStore((s) => s.insertBlankPage);
   const scrollRef = useRef<HTMLDivElement>(null);
   const thumbRenderers = useRef<Map<number, ReturnType<typeof createPageRenderer>>>(new Map());
-  const canvasRefs = useRef<Map<number, HTMLCanvasElement>>(new Map());
+  const [thumbUrls, setThumbUrls] = useState<Map<number, string>>(new Map());
 
   // ── Auto-scroll to current page ───────────────────────────────
   useEffect(() => {
@@ -40,36 +40,11 @@ export function FilmStrip() {
     if (!pdfDoc) return;
 
     const renderThumbs = async () => {
+      const newUrls = new Map<number, string>();
       for (let i = 0; i < pages.length; i++) {
         const page = pages[i];
-        const canvas = canvasRefs.current.get(i);
-        if (!canvas) continue;
 
-        if (page.isBlank) {
-          // 白紙サムネイル
-          canvas.width = THUMB_WIDTH * 2;
-          canvas.height = THUMB_HEIGHT * 2;
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.fillStyle = '#cccccc';
-            ctx.font = '14px system-ui';
-            ctx.textAlign = 'center';
-            ctx.fillText('白紙', canvas.width / 2, canvas.height / 2 + 5);
-          }
-          continue;
-        }
-
-        if (page.deleted) {
-          // 削除済み: グレーサムネイル
-          canvas.width = THUMB_WIDTH * 2;
-          canvas.height = THUMB_HEIGHT * 2;
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            ctx.fillStyle = '#2a2d35';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-          }
+        if (page.isBlank || page.deleted) {
           continue;
         }
 
@@ -86,11 +61,25 @@ export function FilmStrip() {
             THUMB_WIDTH / defaultVp.width,
             THUMB_HEIGHT / defaultVp.height,
           ) * 2; // 2x for sharpness
-          await renderer.render(pdfPage, canvas, scale);
+          
+          const tempCanvas = document.createElement('canvas');
+          tempCanvas.width = defaultVp.width * scale;
+          tempCanvas.height = defaultVp.height * scale;
+          
+          const success = await renderer.render(pdfPage, tempCanvas, scale);
+          if (success) {
+            newUrls.set(i, tempCanvas.toDataURL('image/jpeg', 0.5));
+          }
+          
+          // Force memory disposal
+          tempCanvas.width = 0;
+          tempCanvas.height = 0;
+          pdfPage.cleanup();
         } catch (_err) {
           // Ignore cancelled renders
         }
       }
+      setThumbUrls(newUrls);
     };
 
     renderThumbs();
@@ -112,15 +101,6 @@ export function FilmStrip() {
       insertBlankPage(afterIdx);
     },
     [insertBlankPage],
-  );
-
-  const setCanvasRef = useCallback(
-    (pageIdx: number, el: HTMLCanvasElement | null) => {
-      if (el) {
-        canvasRefs.current.set(pageIdx, el);
-      }
-    },
-    [],
   );
 
   if (!pdfDoc || pages.length === 0) return null;
@@ -173,14 +153,29 @@ export function FilmStrip() {
                   background: '#1a1d24',
                 }}
               >
-                <canvas
-                  ref={(el) => setCanvasRef(i, el)}
-                  style={{
-                    width: '100%',
-                    height: '100%',
-                    objectFit: 'contain',
-                  }}
-                />
+                {page.isBlank ? (
+                  <div style={{
+                    width: '100%', height: '100%', background: '#ffffff',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    color: '#cccccc', fontSize: '10px'
+                  }}>
+                    白紙
+                  </div>
+                ) : page.deleted ? (
+                  <div style={{ width: '100%', height: '100%', background: '#2a2d35' }} />
+                ) : thumbUrls.get(i) ? (
+                  <img
+                    src={thumbUrls.get(i)}
+                    alt={`Page ${i + 1}`}
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'contain',
+                    }}
+                  />
+                ) : (
+                  <div style={{ width: '100%', height: '100%', background: '#1a1d24' }} />
+                )}
 
                 {/* Page number */}
                 <div

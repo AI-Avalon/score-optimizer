@@ -2,6 +2,7 @@ import { useCallback, useRef, useState, useEffect } from 'react';
 import { useScoreStore } from '../store/useScoreStore';
 import { ScoreCanvas } from './ScoreCanvas';
 import { FilmStrip } from './FilmStrip';
+import { ErrorBoundary } from './ErrorBoundary';
 import { useGesture } from '@use-gesture/react';
 import {
   ChevronLeft,
@@ -22,7 +23,8 @@ import {
   FileText,
   Crop,
   SlidersHorizontal,
-  Sparkles
+  Sparkles,
+  FileUp
 } from 'lucide-react';
 import type { PaperPresetKey } from '../types';
 import { FULL_PAGE_RECT } from '../types';
@@ -147,6 +149,52 @@ export function MobileLayout() {
     }
   );
 
+  if (!pdfDoc) {
+    return (
+      <div
+        className="mobile-layout-root"
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          width: '100vw',
+          height: '100dvh',
+          overflow: 'hidden',
+          background: 'var(--color-base)',
+          paddingTop: 'env(safe-area-inset-top, 0px)',
+          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+          paddingLeft: 'env(safe-area-inset-left, 0px)',
+          paddingRight: 'env(safe-area-inset-right, 0px)',
+        }}
+      >
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
+          <div style={{
+            background: 'var(--color-panel)', border: '1px solid var(--color-border)', borderRadius: '24px',
+            padding: '40px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.4)', maxWidth: '400px', width: '100%'
+          }}>
+            <FileUp size={48} style={{ color: '#818cf8', marginBottom: '24px' }} />
+            <h2 style={{ fontSize: '20px', fontWeight: 800, marginBottom: '12px', color: '#fff' }}>楽譜PDFを選択</h2>
+            <p style={{ fontSize: '14px', color: 'var(--color-text-dim)', marginBottom: '32px', lineHeight: 1.6 }}>
+              A3見開き・B4/A4単ページ対応<br />（ドラッグ＆ドロップまたはタップ）
+            </p>
+            <input ref={fileInputRef} type="file" accept=".pdf" onChange={handleFileSelect} style={{ display: 'none' }} />
+            <button
+              type="button"
+              className="btn btn-accent"
+              onClick={() => fileInputRef.current?.click()}
+              style={{
+                padding: '16px 32px', fontSize: '16px', fontWeight: 700, borderRadius: '999px',
+                width: '100%', boxShadow: '0 4px 12px rgba(79, 70, 229, 0.4)'
+              }}
+            >
+              PDFファイルを開く
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className="mobile-layout-root"
@@ -211,7 +259,6 @@ export function MobileLayout() {
         </div>
       </div>
 
-      {/* ── Main Score Area ── */}
       <div 
         {...bindGestures()}
         style={{ 
@@ -221,7 +268,9 @@ export function MobileLayout() {
           touchAction: 'none'
         }}
       >
-        <ScoreCanvas />
+        <ErrorBoundary>
+          <ScoreCanvas />
+        </ErrorBoundary>
       </div>
 
       {/* ── Action Bar (Bottom Fixed - 56px) ── */}
@@ -447,13 +496,6 @@ export function MobileLayout() {
 
       {/* Invisible file input trigger */}
       <input ref={fileInputRef} type="file" accept=".pdf" onChange={handleFileSelect} style={{ display: 'none' }} />
-      {!pdfDoc && (
-        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--color-base)' }}>
-           <button type="button" className="btn btn-accent" onClick={() => fileInputRef.current?.click()} style={{ padding: '16px 32px', fontSize: '18px', borderRadius: '999px' }}>
-              PDF読込
-           </button>
-        </div>
-      )}
 
       <style>{`
         @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }

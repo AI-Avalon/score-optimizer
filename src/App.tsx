@@ -8,6 +8,7 @@ import { DropZone } from './components/DropZone';
 import { MobileLayout } from './components/MobileLayout';
 import { HelpModal } from './components/HelpModal';
 import { useScoreStore } from './store/useScoreStore';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 /**
  * App — Score Optimizer 2.0 レスポンシブルート分岐
@@ -98,7 +99,9 @@ export default function App() {
           }}
         >
           <Sidebar />
-          <ScoreCanvas />
+          <ErrorBoundary>
+            <ScoreCanvas />
+          </ErrorBoundary>
         </div>
 
         <FilmStrip />

@@ -18,6 +18,7 @@ export function ScoreCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef(createPageRenderer());
+  const pageProxyRef = useRef<any>(null);
 
   const pdfDoc = useScoreStore((s) => s.pdfDoc);
   const currentPage = useScoreStore((s) => s.currentPage);
@@ -115,6 +116,7 @@ export function ScoreCanvas() {
       try {
         const page = await (pdfDoc as unknown as { getPage(n: number): Promise<Parameters<typeof rendererRef.current.render>[0]> }).getPage(pageEntry.sourceIndex + 1);
         if (cancelled) return;
+        pageProxyRef.current = page;
 
         const defaultViewport = page.getViewport({ scale: 1 });
 
@@ -131,9 +133,12 @@ export function ScoreCanvas() {
           scale = fitScale * zoom;
         }
 
-        const success = await rendererRef.current.render(page, canvas, scale);
+        const dpr = Math.min(window.devicePixelRatio || 1, 1.75);
+        const success = await rendererRef.current.render(page, canvas, scale * dpr);
         if (success && !cancelled) {
-          setCanvasSize({ width: canvas.width, height: canvas.height });
+          canvas.style.width = `${canvas.width / dpr}px`;
+          canvas.style.height = `${canvas.height / dpr}px`;
+          setCanvasSize({ width: canvas.width / dpr, height: canvas.height / dpr });
         }
       } catch (err) {
         if (!cancelled) console.error('Render error:', err);
@@ -170,6 +175,12 @@ export function ScoreCanvas() {
       cancelAnimationFrame(animationFrameId);
       observer.disconnect();
       rendererRef.current.cancel();
+      if (pageProxyRef.current) {
+        if (typeof pageProxyRef.current.cleanup === 'function') {
+          pageProxyRef.current.cleanup();
+        }
+        pageProxyRef.current = null;
+      }
     };
   }, [pdfDoc, currentPage, zoom, zoomMode, pages, settingsVersion]);
 
