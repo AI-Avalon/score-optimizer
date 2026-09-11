@@ -135,6 +135,7 @@ interface ScoreState {
 
   // 一括操作
   applySettingsToAllPages: () => void;
+  applySettingsToRemainingPages: () => void;
   resetToDefaults: () => void;
 
   // プログレス
@@ -280,9 +281,42 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
 
   updateSettings: (partial: Partial<ProcessSettings>) => {
     const state = get();
-    const newSettings = { ...state.settings, ...partial };
-    const newCrop = computeCropRect(newSettings, state.detectedCropRect);
-    set({ settings: newSettings, cropRect: newCrop, leftCropRect: newCrop, rightCropRect: newCrop });
+    const override = state.pageOverrides[state.currentPage];
+    
+    if (override) {
+      const newOverride = { ...override };
+      let hasOverrideChanges = false;
+      const newGlobalSettings = { ...state.settings };
+      let hasGlobalChanges = false;
+
+      for (const [key, value] of Object.entries(partial)) {
+        if (key in newOverride) {
+          (newOverride as any)[key] = value;
+          hasOverrideChanges = true;
+        } else {
+          (newGlobalSettings as any)[key] = value;
+          hasGlobalChanges = true;
+        }
+      }
+
+      if (hasOverrideChanges) {
+        state.pageOverrides[state.currentPage] = newOverride;
+        set({ pageOverrides: { ...state.pageOverrides } });
+      }
+      
+      const effective = get().getEffectiveSettings(state.currentPage);
+      const newCrop = computeCropRect(effective, state.detectedCropRect);
+      
+      if (hasGlobalChanges) {
+        set({ settings: newGlobalSettings, cropRect: newCrop, leftCropRect: newCrop, rightCropRect: newCrop });
+      } else if (hasOverrideChanges) {
+        set({ cropRect: newCrop, leftCropRect: newCrop, rightCropRect: newCrop });
+      }
+    } else {
+      const newSettings = { ...state.settings, ...partial };
+      const newCrop = computeCropRect(newSettings, state.detectedCropRect);
+      set({ settings: newSettings, cropRect: newCrop, leftCropRect: newCrop, rightCropRect: newCrop });
+    }
   },
 
   setSplitOffsetPercent: (percent: number) => {
@@ -647,6 +681,40 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
     set({
       settings: { ...effective },
       pageOverrides: {},
+      applyToAllNotification: Date.now(),
+      settingsVersion: state.settingsVersion + 1,
+    });
+  },
+
+  applySettingsToRemainingPages: () => {
+    const state = get();
+    const effective = get().getEffectiveSettings(state.currentPage);
+    
+    // 現在のページの設定を、現在のページ以降のすべてのページに個別オーバーライドとして適用する
+    const newOverrides = { ...state.pageOverrides };
+    for (let i = state.currentPage; i < state.pages.length; i++) {
+      if (!state.pages[i].deleted) {
+        newOverrides[i] = {
+          pageProcessingMode: effective.pageProcessingMode,
+          splitOffsetPercent: effective.splitOffsetPercent,
+          pageOrder: effective.pageOrder,
+          blackMarginThreshold: effective.blackMarginThreshold,
+          cropPaddingPx: effective.cropPaddingPx,
+          autoCropEnabled: effective.autoCropEnabled,
+          manualTrimLeftPercent: effective.manualTrimLeftPercent,
+          manualTrimRightPercent: effective.manualTrimRightPercent,
+          manualTrimTopPercent: effective.manualTrimTopPercent,
+          manualTrimBottomPercent: effective.manualTrimBottomPercent,
+          useAdaptiveThreshold: effective.useAdaptiveThreshold,
+          fixedThreshold: effective.fixedThreshold,
+          outputColorMode: effective.outputColorMode,
+          independentSplitFrames: effective.independentSplitFrames,
+        };
+      }
+    }
+
+    set({
+      pageOverrides: newOverrides,
       applyToAllNotification: Date.now(),
       settingsVersion: state.settingsVersion + 1,
     });

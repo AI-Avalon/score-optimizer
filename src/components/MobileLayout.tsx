@@ -1,7 +1,8 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef, useState, useEffect } from 'react';
 import { useScoreStore } from '../store/useScoreStore';
 import { MainCanvas } from './MainCanvas';
 import { FilmStrip } from './FilmStrip';
+import { useGesture } from '@use-gesture/react';
 import {
   ChevronLeft,
   ChevronRight,
@@ -10,22 +11,59 @@ import {
   Download,
   Trash2,
   FilePlus,
-  ArrowUp,
-  ArrowDown,
-  ArrowLeft,
-  ArrowRight
+  Copy,
+  RefreshCcw
 } from 'lucide-react';
-import type { PaperPresetKey, NormalizedRect } from '../types';
+import type { PaperPresetKey } from '../types';
+
+function DecoupledSlider({ label, value, min, max, step, onChange }: { label: string, value: number, min: number, max: number, step: number, onChange: (v: number) => void }) {
+  const [localValue, setLocalValue] = useState<number | null>(null);
+  
+  useEffect(() => {
+    setLocalValue(null);
+  }, [value]);
+
+  const displayValue = localValue ?? value;
+
+  return (
+    <div style={{ marginBottom: '8px' }}>
+      <div className="setting-row" style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', marginBottom: '6px' }}>
+        <span className="setting-label">{label}</span>
+        <span className="setting-value">{Number.isInteger(step) ? displayValue : displayValue.toFixed(1)}</span>
+      </div>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={displayValue}
+        onChange={(e) => setLocalValue(Number(e.target.value))}
+        onPointerUp={() => { if (localValue !== null) { onChange(localValue); setLocalValue(null); } }}
+        onTouchEnd={() => { if (localValue !== null) { onChange(localValue); setLocalValue(null); } }}
+        onKeyUp={() => { if (localValue !== null) { onChange(localValue); setLocalValue(null); } }}
+        style={{ width: '100%' }}
+      />
+    </div>
+  );
+}
 
 export function MobileLayout() {
   const {
     pdfDoc, pages, currentPage, setCurrentPage,
-    isExporting, exportPdf, loadPdfFromFile, pdfFileName,
-    settings, updateSettings, detectBlackMargins, isDetecting,
-    applySettingsToAllPages, resetToDefaults,
+    isExporting, exportPdf, loadPdfFromFile,
+    updateSettings, detectBlackMargins, isDetecting,
+    applySettingsToAllPages, applySettingsToRemainingPages, resetToDefaults,
     selectedPaper, setSelectedPaper,
-    deletePage, insertBlankPage
+    deletePage, insertBlankPage,
+    zoom, setZoom
   } = useScoreStore();
+
+  const globalSettings = useScoreStore(s => s.settings);
+  const pageOverrides = useScoreStore(s => s.pageOverrides);
+  const override = pageOverrides[currentPage];
+  const settings = override ? { ...globalSettings, ...override } : globalSettings;
+  const hasOverride = !!override;
+  const removePageOverride = useScoreStore((s) => s.removePageOverride);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeSheet, setActiveSheet] = useState<'none' | 'settings' | 'thumbnails'>('none');
@@ -52,18 +90,35 @@ export function MobileLayout() {
     showToast('全ページに適用しました');
     setActiveSheet('none');
   };
-  
-  const nudgeCrop = (dx: number, dy: number) => {
-    const s = useScoreStore.getState();
-    const update = (rect: NormalizedRect) => ({
-      ...rect,
-      x: Math.max(0, Math.min(1 - rect.width, rect.x + dx)),
-      y: Math.max(0, Math.min(1 - rect.height, rect.y + dy))
-    });
-    s.setCropRect(update(s.cropRect));
-    s.setLeftCropRect(update(s.leftCropRect));
-    s.setRightCropRect(update(s.rightCropRect));
+
+  const handleApplyRemaining = () => {
+    applySettingsToRemainingPages();
+    showToast('このページ以降に適用しました');
+    setActiveSheet('none');
   };
+
+  // Pinch & Swipe gestures via useGesture
+  const bindGestures = useGesture(
+    {
+      onPinch: ({ offset: [d] }) => {
+        setZoom(d);
+      },
+      onDrag: ({ direction: [dx], swipe: [swipeX], distance: [distX], cancel }) => {
+        if (zoom > 1.05) return; // Only allow page swipe when not heavily zoomed
+        if (swipeX === -1 || (dx < 0 && distX > 80)) {
+          if (currentPage < pages.length - 1) setCurrentPage(currentPage + 1);
+          cancel();
+        } else if (swipeX === 1 || (dx > 0 && distX > 80)) {
+          if (currentPage > 0) setCurrentPage(currentPage - 1);
+          cancel();
+        }
+      }
+    },
+    {
+      pinch: { scaleBounds: { min: 1, max: 5 }, rubberband: true },
+      drag: { axis: 'x', filterTaps: true, threshold: 10 }
+    }
+  );
 
   return (
     <div
@@ -81,126 +136,78 @@ export function MobileLayout() {
         paddingRight: 'env(safe-area-inset-right, 0px)',
       }}
     >
-      {/* ── Header & Segmented Control ── */}
-      <header
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          background: 'rgba(23, 25, 33, 0.85)',
-          backdropFilter: 'blur(12px)',
-          WebkitBackdropFilter: 'blur(12px)',
-          borderBottom: '1px solid var(--color-border)',
-          zIndex: 10,
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', height: '44px' }}>
-          <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '70%' }}>
-            {pdfFileName || 'Score Optimizer'}
-          </span>
-          <input ref={fileInputRef} type="file" accept=".pdf" onChange={handleFileSelect} style={{ display: 'none' }} />
-          {!pdfDoc && (
-            <button className="btn btn-sm btn-accent" onClick={() => fileInputRef.current?.click()}>
-              PDF読込
-            </button>
+      {/* ── Top Header Bar (Absolute) ── */}
+      <div style={{
+        position: 'absolute', top: 'env(safe-area-inset-top, 0px)', left: 0, right: 0,
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        padding: '12px 16px', zIndex: 30, pointerEvents: 'none'
+      }}>
+        <div style={{
+          background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)',
+          padding: '6px 12px', borderRadius: '16px', color: '#fff', fontSize: '13px', fontWeight: 600,
+          pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: '8px'
+        }}>
+          <span>{pageLabel}</span>
+          {hasOverride && (
+            <span style={{ background: 'var(--color-orange)', color: '#000', fontSize: '10px', padding: '2px 6px', borderRadius: '8px', fontWeight: 800 }}>
+              カスタム中
+            </span>
           )}
         </div>
-        
-        {pdfDoc && (
-          <div style={{ padding: '0 12px 12px 12px' }}>
-            <div style={{
-              display: 'flex',
-              background: 'rgba(0,0,0,0.3)',
-              borderRadius: '10px',
-              padding: '4px',
-              width: '100%',
-              border: '1px solid rgba(255,255,255,0.05)'
-            }}>
-              <button
-                style={{
-                  flex: 1, padding: '8px', borderRadius: '8px', fontSize: '13px', fontWeight: 600,
-                  background: settings.pageProcessingMode === 'spread_split' ? 'var(--color-accent)' : 'transparent',
-                  color: settings.pageProcessingMode === 'spread_split' ? '#fff' : 'rgba(255,255,255,0.6)',
-                  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)', border: 'none',
-                  boxShadow: settings.pageProcessingMode === 'spread_split' ? '0 2px 8px rgba(79, 70, 229, 0.4)' : 'none'
-                }}
-                onClick={() => updateSettings({ pageProcessingMode: 'spread_split' })}
-              >
-                見開き2分割
-              </button>
-              <button
-                style={{
-                  flex: 1, padding: '8px', borderRadius: '8px', fontSize: '13px', fontWeight: 600,
-                  background: settings.pageProcessingMode === 'single_fit' ? 'var(--color-accent)' : 'transparent',
-                  color: settings.pageProcessingMode === 'single_fit' ? '#fff' : 'rgba(255,255,255,0.6)',
-                  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)', border: 'none',
-                  boxShadow: settings.pageProcessingMode === 'single_fit' ? '0 2px 8px rgba(79, 70, 229, 0.4)' : 'none'
-                }}
-                onClick={() => updateSettings({ pageProcessingMode: 'single_fit' })}
-              >
-                単ページ幅統一
-              </button>
-            </div>
-          </div>
-        )}
-      </header>
 
-      {/* ── Main Canvas ── */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        {hasOverride && (
+          <button 
+            className="btn btn-sm" 
+            onClick={removePageOverride}
+            style={{ pointerEvents: 'auto', background: 'rgba(255,255,255,0.9)', color: '#000', fontWeight: 700 }}
+          >
+            全体設定に戻す
+          </button>
+        )}
+      </div>
+
+      {/* ── Main Score Area (Top 85%) ── */}
+      <div 
+        {...bindGestures()}
+        style={{ 
+          height: '85%', 
+          position: 'relative',
+          touchAction: 'none' // required for useGesture
+        }}
+      >
         <MainCanvas />
       </div>
 
-      {/* ── Bottom Thumb Dock ── */}
-      {pdfDoc && (
-        <div style={{
-          position: 'absolute',
-          bottom: '24px',
-          left: '0',
-          right: '0',
-          display: 'flex',
-          justifyContent: 'center',
-          pointerEvents: 'none',
-          zIndex: 20,
-        }}>
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            padding: '8px 12px',
-            background: 'rgba(20, 23, 31, 0.9)',
-            backdropFilter: 'blur(16px)',
-            WebkitBackdropFilter: 'blur(16px)',
-            borderRadius: '999px',
-            boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
-            border: '1px solid rgba(255,255,255,0.1)',
-            pointerEvents: 'auto',
-          }}>
-            <button className="btn btn-icon" style={{ borderRadius: '50%', width: '44px', height: '44px', background: 'transparent', border: 'none' }} onClick={() => setCurrentPage(currentPage - 1)} disabled={currentPage <= 0}>
-              <ChevronLeft size={24} />
-            </button>
-            <span style={{ fontSize: '13px', fontWeight: 700, width: '60px', textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>
-              {pageLabel}
-            </span>
-            <button className="btn btn-icon" style={{ borderRadius: '50%', width: '44px', height: '44px', background: 'transparent', border: 'none' }} onClick={() => setCurrentPage(currentPage + 1)} disabled={currentPage >= pages.length - 1}>
-              <ChevronRight size={24} />
-            </button>
-            
-            <div style={{ width: '1px', height: '24px', background: 'rgba(255,255,255,0.2)', margin: '0 4px' }} />
-            
-            <button className="btn btn-icon" style={{ borderRadius: '50%', width: '44px', height: '44px', background: activeSheet === 'settings' ? 'var(--color-accent)' : 'transparent', border: 'none', color: activeSheet === 'settings' ? '#fff' : 'inherit' }} onClick={() => setActiveSheet(activeSheet === 'settings' ? 'none' : 'settings')}>
-              <Settings size={22} />
-            </button>
-            <button className="btn btn-icon" style={{ borderRadius: '50%', width: '44px', height: '44px', background: activeSheet === 'thumbnails' ? 'var(--color-accent)' : 'transparent', border: 'none', color: activeSheet === 'thumbnails' ? '#fff' : 'inherit' }} onClick={() => setActiveSheet(activeSheet === 'thumbnails' ? 'none' : 'thumbnails')}>
-              <LayoutGrid size={22} />
-            </button>
-            
-            <div style={{ width: '1px', height: '24px', background: 'rgba(255,255,255,0.2)', margin: '0 4px' }} />
-            
-            <button className="btn btn-icon" style={{ borderRadius: '50%', width: '44px', height: '44px', background: 'var(--color-accent)', border: 'none', color: '#fff' }} onClick={exportPdf} disabled={isExporting}>
-              <Download size={22} />
-            </button>
-          </div>
-        </div>
-      )}
+      {/* ── Action Bar (Bottom 15%) ── */}
+      <div style={{
+        height: '15%',
+        background: 'var(--color-panel)',
+        borderTop: '1px solid var(--color-border)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-evenly',
+        padding: '0 12px'
+      }}>
+        <button className="btn btn-icon" onClick={() => setCurrentPage(currentPage - 1)} disabled={currentPage <= 0} style={{ width: '48px', height: '48px', borderRadius: '16px', background: 'var(--color-surface)' }}>
+          <ChevronLeft size={24} />
+        </button>
+        
+        <button className="btn btn-icon" onClick={() => setActiveSheet('thumbnails')} style={{ width: '48px', height: '48px', borderRadius: '16px', background: 'var(--color-surface)', color: activeSheet === 'thumbnails' ? 'var(--color-accent)' : '#fff' }}>
+          <LayoutGrid size={24} />
+        </button>
+
+        <button className="btn btn-icon" onClick={() => setActiveSheet('settings')} style={{ width: '64px', height: '64px', borderRadius: '20px', background: 'var(--color-accent)', color: '#fff', boxShadow: '0 8px 24px rgba(79, 70, 229, 0.4)' }}>
+          <Settings size={28} />
+        </button>
+
+        <button className="btn btn-icon" onClick={exportPdf} disabled={isExporting || !pdfDoc} style={{ width: '48px', height: '48px', borderRadius: '16px', background: 'var(--color-surface)' }}>
+          <Download size={24} />
+        </button>
+        
+        <button className="btn btn-icon" onClick={() => setCurrentPage(currentPage + 1)} disabled={currentPage >= pages.length - 1} style={{ width: '48px', height: '48px', borderRadius: '16px', background: 'var(--color-surface)' }}>
+          <ChevronRight size={24} />
+        </button>
+      </div>
 
       {/* ── Bottom Sheet Drawer ── */}
       {activeSheet !== 'none' && (
@@ -226,7 +233,7 @@ export function MobileLayout() {
                     <div style={{ fontSize: '18px', fontWeight: 700 }}>ページ一覧</div>
                     <div style={{ display: 'flex', gap: '8px' }}>
                       <button className="btn btn-sm" onClick={() => insertBlankPage(currentPage)} style={{ background: 'var(--color-surface)' }}>
-                        <FilePlus size={16} /> 白紙挿入
+                        <FilePlus size={16} /> 白紙
                       </button>
                       <button className="btn btn-sm" onClick={() => deletePage(currentPage)} disabled={activeCount <= 1} style={{ background: 'var(--color-surface)', color: 'var(--color-danger)' }}>
                         <Trash2 size={16} /> 削除
@@ -241,6 +248,32 @@ export function MobileLayout() {
                 <>
                   <div style={{ fontSize: '20px', fontWeight: 700 }}>設定</div>
                   
+                  {/* Processing Mode */}
+                  <div style={{ display: 'flex', gap: '8px', background: 'var(--color-surface)', padding: '6px', borderRadius: '12px' }}>
+                    <button
+                      style={{
+                        flex: 1, padding: '12px', borderRadius: '8px', fontSize: '14px', fontWeight: 700,
+                        background: settings.pageProcessingMode === 'spread_split' ? 'var(--color-accent)' : 'transparent',
+                        color: settings.pageProcessingMode === 'spread_split' ? '#fff' : 'rgba(255,255,255,0.6)',
+                        border: 'none', transition: 'all 0.2s'
+                      }}
+                      onClick={() => updateSettings({ pageProcessingMode: 'spread_split' })}
+                    >
+                      見開き分割
+                    </button>
+                    <button
+                      style={{
+                        flex: 1, padding: '12px', borderRadius: '8px', fontSize: '14px', fontWeight: 700,
+                        background: settings.pageProcessingMode === 'single_fit' ? 'var(--color-accent)' : 'transparent',
+                        color: settings.pageProcessingMode === 'single_fit' ? '#fff' : 'rgba(255,255,255,0.6)',
+                        border: 'none', transition: 'all 0.2s'
+                      }}
+                      onClick={() => updateSettings({ pageProcessingMode: 'single_fit' })}
+                    >
+                      単ページ
+                    </button>
+                  </div>
+
                   {/* 用紙サイズ */}
                   <div>
                     <div className="section-title">用紙判型</div>
@@ -272,34 +305,10 @@ export function MobileLayout() {
 
                     <div style={{ borderTop: '1px solid var(--color-border)', margin: '0 -20px 20px', padding: '20px 20px 0' }}>
                       <div className="section-title">手動トリム (%)</div>
-                      {[
-                        { label: '左', key: 'manualTrimLeftPercent' },
-                        { label: '右', key: 'manualTrimRightPercent' },
-                        { label: '上', key: 'manualTrimTopPercent' },
-                        { label: '下', key: 'manualTrimBottomPercent' }
-                      ].map(trim => (
-                        <div key={trim.key} style={{ marginBottom: '12px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', marginBottom: '6px' }}>
-                            <span>{trim.label}</span>
-                            <span>{(settings as any)[trim.key].toFixed(1)}%</span>
-                          </div>
-                          <input type="range" min="0" max="20" step="0.5" value={(settings as any)[trim.key]} onChange={(e) => updateSettings({ [trim.key]: Number(e.target.value) })} style={{ width: '100%' }} />
-                        </div>
-                      ))}
-                    </div>
-
-                    <div style={{ borderTop: '1px solid var(--color-border)', margin: '0 -20px', padding: '20px 20px 0' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <span style={{ fontSize: '15px', fontWeight: 600, color: 'var(--color-text)' }}>1mm微動 (十字キー)</span>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
-                          <div />
-                          <button className="btn btn-icon" style={{ background: 'var(--color-base)' }} onClick={() => nudgeCrop(0, -0.005)}><ArrowUp size={18}/></button>
-                          <div />
-                          <button className="btn btn-icon" style={{ background: 'var(--color-base)' }} onClick={() => nudgeCrop(-0.005, 0)}><ArrowLeft size={18}/></button>
-                          <button className="btn btn-icon" style={{ background: 'var(--color-base)' }} onClick={() => nudgeCrop(0, 0.005)}><ArrowDown size={18}/></button>
-                          <button className="btn btn-icon" style={{ background: 'var(--color-base)' }} onClick={() => nudgeCrop(0.005, 0)}><ArrowRight size={18}/></button>
-                        </div>
-                      </div>
+                      <DecoupledSlider label="左" value={settings.manualTrimLeftPercent} min={0} max={20} step={0.5} onChange={(v) => updateSettings({ manualTrimLeftPercent: v })} />
+                      <DecoupledSlider label="右" value={settings.manualTrimRightPercent} min={0} max={20} step={0.5} onChange={(v) => updateSettings({ manualTrimRightPercent: v })} />
+                      <DecoupledSlider label="上" value={settings.manualTrimTopPercent} min={0} max={20} step={0.5} onChange={(v) => updateSettings({ manualTrimTopPercent: v })} />
+                      <DecoupledSlider label="下" value={settings.manualTrimBottomPercent} min={0} max={20} step={0.5} onChange={(v) => updateSettings({ manualTrimBottomPercent: v })} />
                     </div>
                   </div>
 
@@ -312,21 +321,23 @@ export function MobileLayout() {
                     </label>
                     {settings.outputColorMode === 'monochrome' && (
                       <div style={{ padding: '0 8px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', color: 'var(--color-text-muted)', marginBottom: '10px' }}>
-                          <span>二値化しきい値</span>
-                          <span>{settings.fixedThreshold}</span>
-                        </div>
-                        <input type="range" min="80" max="230" value={settings.fixedThreshold} onChange={(e) => updateSettings({ fixedThreshold: Number(e.target.value) })} style={{ width: '100%' }} />
+                        <DecoupledSlider label="二値化しきい値" value={settings.fixedThreshold} min={80} max={230} step={1} onChange={(v) => updateSettings({ fixedThreshold: v })} />
                       </div>
                     )}
                   </div>
 
                   {/* 一括・リセット */}
-                  <div style={{ marginTop: '16px' }}>
-                    <button className="btn btn-accent" onClick={handleApplyAll} style={{ width: '100%', padding: '18px', fontSize: '16px', fontWeight: 700, marginBottom: '12px', borderRadius: '12px', boxShadow: '0 4px 16px rgba(79, 70, 229, 0.4)' }}>
-                      現在の設定を全ページに適用
+                  <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <button className="btn btn-accent" onClick={handleApplyAll} style={{ padding: '16px', fontSize: '16px', fontWeight: 700, borderRadius: '12px', boxShadow: '0 4px 16px rgba(79, 70, 229, 0.4)' }}>
+                      <Copy size={18} style={{ marginRight: '8px' }} />
+                      全ページに適用
                     </button>
-                    <button className="btn" onClick={() => { resetToDefaults(); setActiveSheet('none'); }} style={{ width: '100%', padding: '16px', fontSize: '15px', borderRadius: '12px', background: 'var(--color-surface)' }}>
+                    <button className="btn" onClick={handleApplyRemaining} style={{ padding: '16px', fontSize: '16px', fontWeight: 700, borderRadius: '12px', background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+                      <Copy size={18} style={{ marginRight: '8px' }} />
+                      このページ以降に適用
+                    </button>
+                    <button className="btn" onClick={() => { resetToDefaults(); setActiveSheet('none'); }} style={{ padding: '16px', fontSize: '15px', borderRadius: '12px', background: 'var(--color-surface)', color: 'var(--color-danger)' }}>
+                      <RefreshCcw size={18} style={{ marginRight: '8px' }} />
                       初期値にリセット
                     </button>
                   </div>
@@ -346,6 +357,16 @@ export function MobileLayout() {
           animation: 'fadeIn 0.2s ease, slideDown 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)'
         }}>
           {toastMessage}
+        </div>
+      )}
+
+      {/* Invisible file input trigger */}
+      <input ref={fileInputRef} type="file" accept=".pdf" onChange={handleFileSelect} style={{ display: 'none' }} />
+      {!pdfDoc && (
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--color-base)' }}>
+           <button className="btn btn-accent" onClick={() => fileInputRef.current?.click()} style={{ padding: '16px 32px', fontSize: '18px', borderRadius: '999px' }}>
+              PDF読込
+           </button>
         </div>
       )}
 

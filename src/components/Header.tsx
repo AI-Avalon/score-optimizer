@@ -30,6 +30,11 @@ export function Header() {
   const setExportDpi = useScoreStore((s) => s.setExportDpi);
   const isAspectRatioLocked = useScoreStore((s) => s.isAspectRatioLocked);
   const setIsAspectRatioLocked = useScoreStore((s) => s.setIsAspectRatioLocked);
+  const currentPage = useScoreStore((s) => s.currentPage);
+  const pageOverrides = useScoreStore((s) => s.pageOverrides);
+  const removePageOverride = useScoreStore((s) => s.removePageOverride);
+
+  const hasOverride = currentPage in pageOverrides;
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -94,6 +99,29 @@ export function Header() {
           >
             — {pdfFileName}
           </span>
+        )}
+
+        {hasOverride && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '8px' }}>
+            <span style={{ 
+              background: 'var(--color-orange)', 
+              color: '#000', 
+              fontSize: '10px', 
+              fontWeight: 800, 
+              padding: '2px 6px', 
+              borderRadius: '999px',
+              whiteSpace: 'nowrap'
+            }}>
+              個別カスタム中
+            </span>
+            <button 
+              className="btn btn-sm" 
+              onClick={removePageOverride}
+              style={{ fontSize: '10px', padding: '2px 6px', height: 'auto' }}
+            >
+              全体設定に戻す
+            </button>
+          </div>
         )}
       </div>
 

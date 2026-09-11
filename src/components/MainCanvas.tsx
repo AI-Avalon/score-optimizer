@@ -46,6 +46,19 @@ export function MainCanvas() {
 
   const [activeFrame, setActiveFrame] = useState<'main' | 'left' | 'right'>('main');
 
+  // --- Decoupled Rendering State ---
+  const [localCropRect, setLocalCropRect] = useState<NormalizedRect | null>(null);
+  const [localLeftCropRect, setLocalLeftCropRect] = useState<NormalizedRect | null>(null);
+  const [localRightCropRect, setLocalRightCropRect] = useState<NormalizedRect | null>(null);
+  const [localSplitOffset, setLocalSplitOffset] = useState<number | null>(null);
+
+  const detectedCropRect = useScoreStore((s) => s.detectedCropRect);
+
+  const displayCropRect = localCropRect ?? cropRect;
+  const displayLeftCropRect = localLeftCropRect ?? leftCropRect;
+  const displayRightCropRect = localRightCropRect ?? rightCropRect;
+  const displaySplitOffset = localSplitOffset ?? settings.splitOffsetPercent;
+
   // ── PDF Page Rendering ──────────────────────────────────────────
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -196,7 +209,7 @@ export function MainCanvas() {
   const isIndependent = settings.pageProcessingMode === 'spread_split' && settings.independentSplitFrames;
   
   const splitLineX = showSplitLine
-    ? cx + getSplitLineNormalizedX(cropRect, settings.splitOffsetPercent) * canvasSize.width
+    ? cx + getSplitLineNormalizedX(displayCropRect, displaySplitOffset) * canvasSize.width
     : 0;
 
   const currentPageEntry = pages[currentPage];
@@ -234,7 +247,7 @@ export function MainCanvas() {
       if (dragging === 'split-line') {
         const widthPercent = (normDx / startRect.width) * 100;
         const newOffset = Math.max(-20, Math.min(20, dragStartRef.current.splitOffset + widthPercent));
-        useScoreStore.getState().setSplitOffsetPercent(newOffset);
+        setLocalSplitOffset(newOffset);
         return;
       }
 
@@ -244,6 +257,43 @@ export function MainCanvas() {
       if (dragging === 'c') {
         newRect.x = Math.max(0, Math.min(1 - startRect.width, startRect.x + normDx));
         newRect.y = Math.max(0, Math.min(1 - startRect.height, startRect.y + normDy));
+
+        // Magnetic Snapping to detectedCropRect
+        if (detectedCropRect) {
+          const SNAP_THRESHOLD = 0.015; // 1.5% of canvas size
+          let snapped = false;
+
+          // Snap left edge
+          if (Math.abs(newRect.x - detectedCropRect.x) < SNAP_THRESHOLD) {
+            newRect.x = detectedCropRect.x;
+            snapped = true;
+          }
+          // Snap right edge
+          if (Math.abs((newRect.x + newRect.width) - (detectedCropRect.x + detectedCropRect.width)) < SNAP_THRESHOLD) {
+            newRect.x = detectedCropRect.x + detectedCropRect.width - newRect.width;
+            snapped = true;
+          }
+          // Snap top edge
+          if (Math.abs(newRect.y - detectedCropRect.y) < SNAP_THRESHOLD) {
+            newRect.y = detectedCropRect.y;
+            snapped = true;
+          }
+          // Snap bottom edge
+          if (Math.abs((newRect.y + newRect.height) - (detectedCropRect.y + detectedCropRect.height)) < SNAP_THRESHOLD) {
+            newRect.y = detectedCropRect.y + detectedCropRect.height - newRect.height;
+            snapped = true;
+          }
+
+          if (snapped && navigator.vibrate) {
+            // Check if we just transitioned to snapped state to avoid continuous vibration
+            const prevX = activeFrame === 'left' ? localLeftCropRect?.x : activeFrame === 'right' ? localRightCropRect?.x : localCropRect?.x;
+            const prevY = activeFrame === 'left' ? localLeftCropRect?.y : activeFrame === 'right' ? localRightCropRect?.y : localCropRect?.y;
+            
+            if (prevX !== newRect.x || prevY !== newRect.y) {
+              navigator.vibrate(10);
+            }
+          }
+        }
       } else {
         // Edge/Corner Drag
         if (dragging.includes('l')) {
@@ -303,17 +353,29 @@ export function MainCanvas() {
         }
       }
 
-      if (activeFrame === 'left') setLeftCropRect(newRect);
-      else if (activeFrame === 'right') setRightCropRect(newRect);
-      else setCropRect(newRect);
+      if (activeFrame === 'left') setLocalLeftCropRect(newRect);
+      else if (activeFrame === 'right') setLocalRightCropRect(newRect);
+      else setLocalCropRect(newRect);
     },
-    [dragging, activeFrame, canvasSize, setCropRect, setLeftCropRect, setRightCropRect, isAspectRatioLocked, selectedPaper, settings.pageProcessingMode, settings.independentSplitFrames],
+    [dragging, activeFrame, canvasSize, localCropRect, localLeftCropRect, localRightCropRect, detectedCropRect, isAspectRatioLocked, selectedPaper, settings.pageProcessingMode, settings.independentSplitFrames],
   );
 
   const handlePointerUp = useCallback(() => {
+    // Commit local state to Zustand store
+    if (localCropRect) setCropRect(localCropRect);
+    if (localLeftCropRect) setLeftCropRect(localLeftCropRect);
+    if (localRightCropRect) setRightCropRect(localRightCropRect);
+    if (localSplitOffset !== null) useScoreStore.getState().setSplitOffsetPercent(localSplitOffset);
+
+    // Reset local state
+    setLocalCropRect(null);
+    setLocalLeftCropRect(null);
+    setLocalRightCropRect(null);
+    setLocalSplitOffset(null);
+
     setDragging(null);
     dragStartRef.current = null;
-  }, []);
+  }, [localCropRect, localLeftCropRect, localRightCropRect, localSplitOffset, setCropRect, setLeftCropRect, setRightCropRect]);
 
   // ── Render Helpers ──────────────────────────────────────────────
   const renderCropOverlay = (rect: NormalizedRect, frameId: 'main' | 'left' | 'right', color: string) => {
@@ -459,10 +521,10 @@ export function MainCanvas() {
           <div
             style={{
               position: 'absolute',
-              left: isIndependent ? 0 : cx + cropRect.x * canvasSize.width,
-              top: isIndependent ? 0 : cy + cropRect.y * canvasSize.height,
-              width: isIndependent ? 0 : cropRect.width * canvasSize.width,
-              height: isIndependent ? 0 : cropRect.height * canvasSize.height,
+              left: isIndependent ? 0 : cx + displayCropRect.x * canvasSize.width,
+              top: isIndependent ? 0 : cy + displayCropRect.y * canvasSize.height,
+              width: isIndependent ? 0 : displayCropRect.width * canvasSize.width,
+              height: isIndependent ? 0 : displayCropRect.height * canvasSize.height,
               boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.45)',
               pointerEvents: 'none',
               zIndex: 4,
@@ -472,17 +534,17 @@ export function MainCanvas() {
           {!isIndependent ? (
             // Single Frame Mode
             <>
-              {renderCropOverlay(cropRect, 'main', 'var(--color-green)')}
+              {renderCropOverlay(displayCropRect, 'main', 'var(--color-green)')}
               
               {showSplitLine && (
                 <div
-                  onPointerDown={(e) => handlePointerDown('split-line', 'main', cropRect, e)}
+                  onPointerDown={(e) => handlePointerDown('split-line', 'main', displayCropRect, e)}
                   style={{
                     position: 'absolute',
                     left: `${splitLineX - 2}px`,
-                    top: `${cy + cropRect.y * canvasSize.height}px`,
+                    top: `${cy + displayCropRect.y * canvasSize.height}px`,
                     width: '4px',
-                    height: `${cropRect.height * canvasSize.height}px`,
+                    height: `${displayCropRect.height * canvasSize.height}px`,
                     background: 'var(--color-orange)',
                     cursor: 'ew-resize',
                     zIndex: 8,
@@ -496,8 +558,8 @@ export function MainCanvas() {
           ) : (
             // Independent Left/Right Frames Mode
             <>
-              {renderCropOverlay(leftCropRect, 'left', 'var(--color-cyan)')}
-              {renderCropOverlay(rightCropRect, 'right', 'var(--color-emerald)')}
+              {renderCropOverlay(displayLeftCropRect, 'left', 'var(--color-cyan)')}
+              {renderCropOverlay(displayRightCropRect, 'right', 'var(--color-emerald)')}
             </>
           )}
         </>

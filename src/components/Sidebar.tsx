@@ -17,8 +17,38 @@ import type { PageProcessingMode, PageOrder, OutputColorMode, FrontMatterMode, R
  * 8. 回転コントロール
  * 9. 一括操作
  */
+
+function DecoupledSlider({ label, value, min, max, step, onChange }: { label: string, value: number, min: number, max: number, step: number, onChange: (v: number) => void }) {
+  const [localValue, setLocalValue] = useState<number | null>(null);
+  
+  useEffect(() => {
+    setLocalValue(null);
+  }, [value]);
+
+  const displayValue = localValue ?? value;
+
+  return (
+    <div style={{ marginBottom: '8px' }}>
+      <div className="setting-row">
+        <span className="setting-label">{label}</span>
+        <span className="setting-value">{Number.isInteger(step) ? displayValue : displayValue.toFixed(1)}</span>
+      </div>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={displayValue}
+        onChange={(e) => setLocalValue(Number(e.target.value))}
+        onPointerUp={() => { if (localValue !== null) { onChange(localValue); setLocalValue(null); } }}
+        onTouchEnd={() => { if (localValue !== null) { onChange(localValue); setLocalValue(null); } }}
+        onKeyUp={() => { if (localValue !== null) { onChange(localValue); setLocalValue(null); } }}
+      />
+    </div>
+  );
+}
+
 export function Sidebar() {
-  const settings = useScoreStore((s) => s.settings);
   const updateSettings = useScoreStore((s) => s.updateSettings);
   const detectBlackMargins = useScoreStore((s) => s.detectBlackMargins);
   const isDetecting = useScoreStore((s) => s.isDetecting);
@@ -36,6 +66,12 @@ export function Sidebar() {
   const resetToDefaults = useScoreStore((s) => s.resetToDefaults);
   const pages = useScoreStore((s) => s.pages);
   const applyToAllNotification = useScoreStore((s) => s.applyToAllNotification);
+  const applySettingsToRemainingPages = useScoreStore((s) => s.applySettingsToRemainingPages);
+  
+  const globalSettings = useScoreStore((s) => s.settings);
+  const hasOverride = currentPage in pageOverrides;
+  const override = pageOverrides[currentPage];
+  const settings = override ? { ...globalSettings, ...override } : globalSettings;
 
   // ── Helpers ──────────────────────────────────────────────────────
   const radio = useCallback(
@@ -51,27 +87,6 @@ export function Sidebar() {
     [],
   );
 
-  const slider = useCallback(
-    (label: string, value: number, min: number, max: number, step: number, onChange: (v: number) => void) => (
-      <div style={{ marginBottom: '8px' }}>
-        <div className="setting-row">
-          <span className="setting-label">{label}</span>
-          <span className="setting-value">{Number.isInteger(step) ? value : value.toFixed(1)}</span>
-        </div>
-        <input
-          type="range"
-          min={min}
-          max={max}
-          step={step}
-          value={value}
-          onChange={(e) => onChange(Number(e.target.value))}
-        />
-      </div>
-    ),
-    [],
-  );
-
-  const hasOverride = currentPage in pageOverrides;
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -119,6 +134,15 @@ export function Sidebar() {
             <RefreshCcw size={12} />
             初期設定にリセット
           </button>
+          <button
+            className="btn btn-sm btn-accent"
+            onClick={applySettingsToRemainingPages}
+            style={{ flex: '1 1 100%' }}
+            disabled={pages.length === 0}
+          >
+            <Copy size={12} />
+            このページ以降すべてに適用
+          </button>
         </div>
       </div>
 
@@ -163,8 +187,8 @@ export function Sidebar() {
           {isDetecting ? '検出中...' : '✨ 黒枠を自動検出'}
         </button>
 
-        {slider('黒余白しきい値', settings.blackMarginThreshold, 0, 80, 1, (v) => updateSettings({ blackMarginThreshold: v }))}
-        {slider('クロップ余白 (px)', settings.cropPaddingPx, 0, 40, 1, (v) => updateSettings({ cropPaddingPx: v }))}
+        <DecoupledSlider label="黒余白しきい値" value={settings.blackMarginThreshold} min={0} max={80} step={1} onChange={(v) => updateSettings({ blackMarginThreshold: v })} />
+        <DecoupledSlider label="クロップ余白 (px)" value={settings.cropPaddingPx} min={0} max={40} step={1} onChange={(v) => updateSettings({ cropPaddingPx: v })} />
 
         <label className="checkbox-row" style={{ marginBottom: '8px' }}>
           <input
@@ -175,23 +199,23 @@ export function Sidebar() {
           適応的二値化（照明ムラ向け）
         </label>
 
-        {slider('固定二値化しきい値', settings.fixedThreshold, 80, 230, 1, (v) => updateSettings({ fixedThreshold: v }))}
+        <DecoupledSlider label="固定二値化しきい値" value={settings.fixedThreshold} min={80} max={230} step={1} onChange={(v) => updateSettings({ fixedThreshold: v })} />
       </div>
 
       {/* ── 4. 手動トリム ────────────────────────────────────── */}
       <div className="settings-section">
         <div className="section-title">手動トリム (%)</div>
-        {slider('左', settings.manualTrimLeftPercent, 0, 20, 0.5, (v) => updateSettings({ manualTrimLeftPercent: v }))}
-        {slider('右', settings.manualTrimRightPercent, 0, 20, 0.5, (v) => updateSettings({ manualTrimRightPercent: v }))}
-        {slider('上', settings.manualTrimTopPercent, 0, 20, 0.5, (v) => updateSettings({ manualTrimTopPercent: v }))}
-        {slider('下', settings.manualTrimBottomPercent, 0, 20, 0.5, (v) => updateSettings({ manualTrimBottomPercent: v }))}
+        <DecoupledSlider label="左" value={settings.manualTrimLeftPercent} min={0} max={20} step={0.5} onChange={(v) => updateSettings({ manualTrimLeftPercent: v })} />
+        <DecoupledSlider label="右" value={settings.manualTrimRightPercent} min={0} max={20} step={0.5} onChange={(v) => updateSettings({ manualTrimRightPercent: v })} />
+        <DecoupledSlider label="上" value={settings.manualTrimTopPercent} min={0} max={20} step={0.5} onChange={(v) => updateSettings({ manualTrimTopPercent: v })} />
+        <DecoupledSlider label="下" value={settings.manualTrimBottomPercent} min={0} max={20} step={0.5} onChange={(v) => updateSettings({ manualTrimBottomPercent: v })} />
       </div>
 
       {/* ── 5. 見開き設定 (spread_split のみ) ────────────────── */}
       {settings.pageProcessingMode === 'spread_split' && (
         <div className="settings-section">
           <div className="section-title">見開き設定</div>
-          {slider('分割位置補正 (%)', settings.splitOffsetPercent, -20, 20, 0.5, (v) => updateSettings({ splitOffsetPercent: v }))}
+          <DecoupledSlider label="分割位置補正 (%)" value={settings.splitOffsetPercent} min={-20} max={20} step={0.5} onChange={(v) => updateSettings({ splitOffsetPercent: v })} />
           
           <label className="checkbox-row" style={{ marginTop: '12px', marginBottom: '12px' }}>
             <input
