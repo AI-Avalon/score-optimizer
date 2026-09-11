@@ -117,17 +117,29 @@ export function ScoreCanvas() {
         // 1. 古いタスクの確実なキャンセル
         if (renderTaskRef.current) {
           renderTaskRef.current.cancel();
+          try { await renderTaskRef.current.promise; } catch (e) {}
           renderTaskRef.current = null;
         }
         // 2. 古いページメモリの解放
         if (pageObjRef.current) {
-          pageObjRef.current.cleanup();
+          try { 
+            const res = pageObjRef.current.cleanup(); 
+            if (res && typeof res.catch === 'function') res.catch(() => {});
+          } catch (e) {}
           pageObjRef.current = null;
+        }
+
+        // ★最重要: PDF.js ドキュメント内画像キャッシュの強制パージ（WebKit OOMクラッシュ防止）
+        if (typeof (pdfDoc as any).cleanup === 'function') {
+          try { 
+            const res = (pdfDoc as any).cleanup(); 
+            if (res && typeof res.catch === 'function') res.catch(() => {});
+          } catch (e) {}
         }
 
         const page = await (pdfDoc as unknown as { getPage(n: number): Promise<any> }).getPage(pageEntry.sourceIndex + 1);
         if (isCancelled) {
-          page.cleanup();
+          try { page.cleanup(); } catch (e) {}
           return;
         }
         pageObjRef.current = page;
@@ -138,48 +150,71 @@ export function ScoreCanvas() {
 
         const unscaledViewport = page.getViewport({ scale: 1.0 });
         const fitScale = Math.min(containerWidth / unscaledViewport.width, containerHeight / unscaledViewport.height);
+        
+        // ★ズーム計算の復元
         const scale = zoomMode === 'fit' ? fitScale : fitScale * zoom;
         const viewport = page.getViewport({ scale: scale * dpr });
 
-        // ダブルバッファリング：オフスクリーンキャンバスに描画
-        const offscreen = document.createElement('canvas');
-        offscreen.width = viewport.width;
-        offscreen.height = viewport.height;
-        const offCtx = offscreen.getContext('2d', { alpha: false });
-        if (offCtx) {
-          offCtx.fillStyle = '#ffffff';
-          offCtx.fillRect(0, 0, offscreen.width, offscreen.height);
-        }
-
-        const renderContext = {
-          canvasContext: offCtx!,
-          viewport: viewport,
-        };
-
-        const task = page.render(renderContext);
-        renderTaskRef.current = task;
-        await task.promise;
-        
-        // 描画が完了した瞬間にメインキャンバスへ転写
-        if (!isCancelled && canvas) {
+        if (isMobile) {
+          // モバイル: 単一Canvas直接描画（メモリ消費最小化）
           canvas.width = viewport.width;
           canvas.height = viewport.height;
           canvas.style.width = `${viewport.width / dpr}px`;
           canvas.style.height = `${viewport.height / dpr}px`;
-          
           if (ctx) {
-            ctx.drawImage(offscreen, 0, 0);
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
           }
-          setCanvasSize({ width: canvas.width / dpr, height: canvas.height / dpr });
-        }
 
-        // 作業用メモリを即時解放
-        offscreen.width = 0;
-        offscreen.height = 0;
+          const renderContext = {
+            canvasContext: ctx!,
+            viewport: viewport,
+          };
+
+          const task = page.render(renderContext);
+          renderTaskRef.current = task;
+          await task.promise;
+          setCanvasSize({ width: canvas.width / dpr, height: canvas.height / dpr });
+        } else {
+          // PC: ダブルバッファリング（白紙チラつきゼロを維持）
+          const offscreen = document.createElement('canvas');
+          offscreen.width = viewport.width;
+          offscreen.height = viewport.height;
+          const offCtx = offscreen.getContext('2d', { alpha: false });
+          if (offCtx) {
+            offCtx.fillStyle = '#ffffff';
+            offCtx.fillRect(0, 0, offscreen.width, offscreen.height);
+          }
+
+          const renderContext = {
+            canvasContext: offCtx!,
+            viewport: viewport,
+          };
+
+          const task = page.render(renderContext);
+          renderTaskRef.current = task;
+          await task.promise;
+          
+          // 描画が完了した瞬間にメインキャンバスへ転写
+          if (!isCancelled && canvas) {
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+            canvas.style.width = `${viewport.width / dpr}px`;
+            canvas.style.height = `${viewport.height / dpr}px`;
+            
+            if (ctx) {
+              ctx.drawImage(offscreen, 0, 0);
+            }
+            setCanvasSize({ width: canvas.width / dpr, height: canvas.height / dpr });
+          }
+
+          // 作業用メモリを即時解放
+          offscreen.width = 0;
+          offscreen.height = 0;
+        }
       } catch (err: any) {
         if (err?.name !== 'RenderingCancelledException' && !err?.message?.includes('cancelled')) {
           console.error('Render error:', err);
-          // エラートースト等を表示するならここで処理（今回はロード画面に巻き戻さない）
         }
       }
     };
@@ -219,11 +254,8 @@ export function ScoreCanvas() {
         renderTaskRef.current = null;
       }
       if (pageObjRef.current) {
-        if (typeof pageObjRef.current.cleanup === 'function') {
-          try {
-            pageObjRef.current.cleanup();
-          } catch (e) {}
-        }
+        // 4. ★レンダリング中断直後の例外を必ずキャッチして握りつぶす
+        try { pageObjRef.current.cleanup(); } catch (e) {}
         pageObjRef.current = null;
       }
     };

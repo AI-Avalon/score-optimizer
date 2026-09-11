@@ -78,7 +78,10 @@ export function FilmStrip() {
           // Force memory disposal
           tempCanvas.width = 0;
           tempCanvas.height = 0;
-          pdfPage.cleanup();
+          try {
+            const res = pdfPage.cleanup();
+            if (res && typeof res.catch === 'function') res.catch(() => {});
+          } catch (e) {}
           // UIスレッドとGCに制御を戻す (モバイルクラッシュ防止)
           await new Promise(r => setTimeout(r, 30));
           
