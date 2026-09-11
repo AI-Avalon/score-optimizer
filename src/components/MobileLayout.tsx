@@ -11,7 +11,7 @@ import {
   LayoutGrid,
   Download,
   Trash2,
-  FilePlus,
+  FilePlus2,
   Move,
   Maximize,
   HelpCircle,
@@ -294,11 +294,11 @@ export function MobileLayout() {
         justifyContent: 'space-evenly',
         padding: '0 8px'
       }}>
-        <button type="button" className="btn btn-icon" aria-label="前" onClick={() => { setCurrentPage(currentPage - 1); if (navigator.vibrate) navigator.vibrate(10); }} disabled={currentPage <= 0} style={{ width: '48px', height: '48px', borderRadius: '12px', background: 'transparent' }}>
+        <button type="button" className="btn btn-icon" aria-label="前" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setCurrentPage(currentPage - 1); if (navigator.vibrate) navigator.vibrate(10); }} disabled={currentPage <= 0} style={{ width: '48px', height: '48px', borderRadius: '12px', background: 'transparent' }}>
           <ChevronLeft size={24} />
         </button>
         
-        <button type="button" className="btn btn-icon" aria-label="戻す" onClick={() => undoAction()} style={{ width: '48px', height: '48px', borderRadius: '12px', background: 'transparent' }}>
+        <button type="button" className="btn btn-icon" aria-label="戻す" onClick={(e) => { e.preventDefault(); e.stopPropagation(); undoAction(); }} style={{ width: '48px', height: '48px', borderRadius: '12px', background: 'transparent' }}>
           <Undo2 size={22} />
         </button>
         
@@ -342,7 +342,7 @@ export function MobileLayout() {
           <LayoutGrid size={22} />
         </button>
         
-        <button type="button" className="btn btn-icon" aria-label="次" onClick={() => { setCurrentPage(currentPage + 1); if (navigator.vibrate) navigator.vibrate(10); }} disabled={currentPage >= pages.length - 1} style={{ width: '48px', height: '48px', borderRadius: '12px', background: 'transparent' }}>
+        <button type="button" className="btn btn-icon" aria-label="次" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setCurrentPage(currentPage + 1); if (navigator.vibrate) navigator.vibrate(10); }} disabled={currentPage >= pages.length - 1} style={{ width: '48px', height: '48px', borderRadius: '12px', background: 'transparent' }}>
           <ChevronRight size={24} />
         </button>
       </div>
@@ -388,8 +388,8 @@ export function MobileLayout() {
                   <div style={{ padding: '0 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                     <div style={{ fontSize: '18px', fontWeight: 700 }}>ページ一覧</div>
                     <div style={{ display: 'flex', gap: '8px' }}>
-                      <button type="button" className="btn btn-sm" onClick={() => insertBlankPage(currentPage)} style={{ background: 'var(--color-surface)' }}>
-                        <FilePlus size={16} /> 白紙
+                      <button type="button" className="btn btn-sm" onClick={(e) => { e.preventDefault(); e.stopPropagation(); insertBlankPage(currentPage); }} style={{ background: 'var(--color-surface)' }}>
+                        <FilePlus2 size={16} /> 白紙を挿入
                       </button>
                       <button type="button" className="btn btn-sm" onClick={() => deletePage(currentPage)} disabled={activeCount <= 1} style={{ background: 'var(--color-surface)', color: 'var(--color-danger)' }}>
                         <Trash2 size={16} /> 削除

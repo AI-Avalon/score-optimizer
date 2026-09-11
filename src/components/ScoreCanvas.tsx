@@ -138,19 +138,18 @@ export function ScoreCanvas() {
         const fitScale = Math.min(containerWidth / unscaledViewport.width, containerHeight / unscaledViewport.height);
         const viewport = page.getViewport({ scale: fitScale * dpr });
 
-        // Canvasサイズのみ更新 (要素はそのまま)
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        canvas.style.width = `${viewport.width / dpr}px`;
-        canvas.style.height = `${viewport.height / dpr}px`;
-
-        if (ctx) {
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
+        // ダブルバッファリング：オフスクリーンキャンバスに描画
+        const offscreen = document.createElement('canvas');
+        offscreen.width = viewport.width;
+        offscreen.height = viewport.height;
+        const offCtx = offscreen.getContext('2d', { alpha: false });
+        if (offCtx) {
+          offCtx.fillStyle = '#ffffff';
+          offCtx.fillRect(0, 0, offscreen.width, offscreen.height);
         }
 
         const renderContext = {
-          canvasContext: ctx!,
+          canvasContext: offCtx!,
           viewport: viewport,
         };
 
@@ -158,12 +157,26 @@ export function ScoreCanvas() {
         renderTaskRef.current = task;
         await task.promise;
         
-        if (!isCancelled) {
+        // 描画が完了した瞬間にメインキャンバスへ転写
+        if (!isCancelled && canvas) {
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+          canvas.style.width = `${viewport.width / dpr}px`;
+          canvas.style.height = `${viewport.height / dpr}px`;
+          
+          if (ctx) {
+            ctx.drawImage(offscreen, 0, 0);
+          }
           setCanvasSize({ width: canvas.width / dpr, height: canvas.height / dpr });
         }
+
+        // 作業用メモリを即時解放
+        offscreen.width = 0;
+        offscreen.height = 0;
       } catch (err: any) {
         if (err?.name !== 'RenderingCancelledException' && !err?.message?.includes('cancelled')) {
           console.error('Render error:', err);
+          // エラートースト等を表示するならここで処理（今回はロード画面に巻き戻さない）
         }
       }
     };
@@ -180,8 +193,9 @@ export function ScoreCanvas() {
     const observer = new ResizeObserver((entries) => {
       const entry = entries[0];
       if (entry) {
-        const width = entry.contentRect.width - 16;
-        const height = entry.contentRect.height - 16;
+        // padding: 36px があるため、contentRect は padding を除いた安全領域
+        const width = entry.contentRect.width;
+        const height = entry.contentRect.height;
         if (width > 0 && height > 0) {
           triggerRender(width, height);
         }
@@ -190,8 +204,8 @@ export function ScoreCanvas() {
 
     observer.observe(container);
 
-    // Initial explicit render
-    triggerRender(container.clientWidth - 16, container.clientHeight - 16);
+    // Initial explicit render (72 = 36px padding * 2)
+    triggerRender(Math.max(0, container.clientWidth - 72), Math.max(0, container.clientHeight - 72));
 
     return () => {
       isCancelled = true;
@@ -523,6 +537,7 @@ export function ScoreCanvas() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
+        padding: '36px',
         cursor: dragging ? (dragging === 'c' ? 'move' : 'grabbing') : 'default',
         touchAction: 'none',
       }}

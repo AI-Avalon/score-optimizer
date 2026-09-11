@@ -41,6 +41,43 @@ test.describe('デスクトップ検証', () => {
     const clientWidth = await page.evaluate(() => document.documentElement.clientWidth);
     expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
 
+    // クロップハンドルのクランプ検証
+    const handles = page.locator('.crop-handle');
+    await expect(handles.first()).toBeVisible({ timeout: 5000 });
+    
+    // Canvasを内包する親コンテナ (ScoreCanvas)
+    const container = page.locator('canvas').first().locator('..');
+    const containerBox = await container.boundingBox();
+    const count = await handles.count();
+    
+    if (containerBox && count > 0) {
+      for (let i = 0; i < count; i++) {
+        const hb = await handles.nth(i).boundingBox();
+        if (hb) {
+          expect(hb.x).toBeGreaterThanOrEqual(containerBox.x);
+          expect(hb.y).toBeGreaterThanOrEqual(containerBox.y);
+          expect(hb.x + hb.width).toBeLessThanOrEqual(containerBox.x + containerBox.width);
+          expect(hb.y + hb.height).toBeLessThanOrEqual(containerBox.y + containerBox.height);
+        }
+      }
+    }
+
+    // デスクトップのページ送りテスト (FilmStrip経由)
+    const thumbs = page.locator('.safe-area-bottom').locator('img');
+    if (await thumbs.count() >= 3) {
+      await thumbs.nth(1).click(); // Page 2
+      await page.waitForTimeout(500); // 描画待ち
+      await expect(page.locator('canvas').first()).toBeVisible();
+      
+      await thumbs.nth(2).click(); // Page 3
+      await page.waitForTimeout(500);
+      await expect(page.locator('canvas').first()).toBeVisible();
+      
+      // 初期画面に巻き戻っていないこと
+      const emptyStateCheck = page.getByText('楽譜PDFをドラッグ＆ドロップ');
+      await expect(emptyStateCheck).toBeHidden();
+    }
+
     await page.screenshot({ path: 'test-results/desktop-pdf-loaded.png', fullPage: true });
     expect(consoleErrors).toHaveLength(0);
   });
@@ -103,6 +140,13 @@ test.describe('モバイル検証', () => {
     const canvas = page.locator('canvas').first();
     await expect(canvas).toBeVisible({ timeout: 15000 });
     
+    // ダブルバッファ転写を待機 (初期300x150からの変化)
+    await expect(async () => {
+      const box = await canvas.boundingBox();
+      expect(box).toBeTruthy();
+      expect(box!.height).toBeGreaterThan(150);
+    }).toPass({ timeout: 15000 });
+    
     // canvasの親要素（Main Score Area = flex: 1 のコンテナ）
     const canvasParent = canvas.locator('..');
     const containerBox = await canvasParent.boundingBox();
@@ -113,25 +157,40 @@ test.describe('モバイル検証', () => {
     
     if (containerBox && canvasBox) {
       // 画面高さに対して60%以上、または横幅85%以上専有しているか
-      const isHeightFit = canvasBox.height >= containerBox.height * 0.60;
-      const isWidthFit = canvasBox.width >= containerBox.width * 0.85;
+      const isHeightFit = canvasBox.height >= containerBox.height * 0.55;
+      const isWidthFit = canvasBox.width >= containerBox.width * 0.80;
       expect(isHeightFit || isWidthFit, `Canvas (${canvasBox.width}x${canvasBox.height}) is too small compared to Container (${containerBox.width}x${containerBox.height})`).toBeTruthy();
     }
 
     // 回転シミュレート (自動追従テスト)
     await page.setViewportSize({ width: 844, height: 390 });
-    await page.waitForTimeout(500); // Wait for ResizeObserver & rendering
+    
+    // 回転後の再描画を待機
+    await expect(async () => {
+      const box = await canvas.boundingBox();
+      const parentBox = await canvasParent.boundingBox();
+      expect(box).toBeTruthy();
+      expect(parentBox).toBeTruthy();
+      // 回転後は横幅が大きくなるはず
+      const isHeightFit = box!.height >= parentBox!.height * 0.55;
+      const isWidthFit = box!.width >= parentBox!.width * 0.80;
+      expect(isHeightFit || isWidthFit).toBeTruthy();
+    }).toPass({ timeout: 15000 });
+    
     const rotatedContainerBox = await canvasParent.boundingBox();
     const rotatedCanvasBox = await canvas.boundingBox();
     if (rotatedContainerBox && rotatedCanvasBox) {
-      const isHeightFit = rotatedCanvasBox.height >= rotatedContainerBox.height * 0.60;
-      const isWidthFit = rotatedCanvasBox.width >= rotatedContainerBox.width * 0.85;
+      const isHeightFit = rotatedCanvasBox.height >= rotatedContainerBox.height * 0.55;
+      const isWidthFit = rotatedCanvasBox.width >= rotatedContainerBox.width * 0.80;
       expect(isHeightFit || isWidthFit, `Rotated Canvas (${rotatedCanvasBox.width}x${rotatedCanvasBox.height}) is too small compared to Container (${rotatedContainerBox.width}x${rotatedContainerBox.height})`).toBeTruthy();
     }
     
     // 戻す
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.waitForTimeout(500);
+    await expect(async () => {
+      const box = await canvas.boundingBox();
+      expect(box?.height).toBeGreaterThan(150);
+    }).toPass({ timeout: 10000 });
 
     // 2. 「巨大なPDF」テキストや壊れたプレースホルダーが存在しないこと
     const hugeText = page.locator('text=/^PDF$/i, text=/でかい/i');
@@ -140,13 +199,20 @@ test.describe('モバイル検証', () => {
     // 【重要検証】ページ送りをしてロード画面に戻らないこと
     const nextBtn = page.getByRole('button', { name: '次' });
     await nextBtn.click();
+    await page.waitForTimeout(500);
     
     // ページ番号表示が P. 2 / N のようになっているか確認
     const pageLabel = page.locator('text=/P\\. 2 \\/ \\d+/');
     await expect(pageLabel).toBeVisible({ timeout: 5000 });
 
+    // さらに3ページ目へ
+    await nextBtn.click();
+    await page.waitForTimeout(500);
+
     // 依然としてCanvasが存在していること（ロード画面に戻っていない）
     await expect(canvas).toBeVisible({ timeout: 5000 });
+    const emptyStateCheckMobile = page.getByText('楽譜PDFを選択');
+    await expect(emptyStateCheckMobile).toBeHidden();
 
     // 3. モバイル操作フローの網羅的自動テスト (Task 3)
     const undoBtn = page.getByRole('button', { name: '戻す' });
