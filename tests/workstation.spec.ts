@@ -32,7 +32,7 @@ test.describe('Mobile Workstation Tests', () => {
     await fileChooser.setFiles(path.join(process.cwd(), 'tests', 'fixtures', '見開きテスト.pdf'));
 
     // Wait for the score canvas to load
-    await expect(page.locator('canvas').first()).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('img').first()).toBeVisible({ timeout: 15000 });
     await page.waitForTimeout(1000);
 
     // 2. Continuous Page Turn Test
@@ -55,7 +55,7 @@ test.describe('Mobile Workstation Tests', () => {
     await page.locator('button:has-text("個別・回転")').click();
     
     // Create override
-    await page.locator('button:has-text("このページを個別設定にする")').click();
+    await page.locator('button:has-text("このページだけ個別設定にする")').click();
 
     // Verify override is active (toast or badge)
     await expect(page.locator('text=[ 個別設定中 ]').first()).toBeVisible();

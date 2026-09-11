@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState, useEffect } from 'react';
 import { useScoreStore } from '../store/useScoreStore';
-import { ScoreCanvas } from './ScoreCanvas';
+import { MobileScoreViewer } from './MobileScoreViewer';
 import { FilmStrip } from './FilmStrip';
 import { ErrorBoundary } from './ErrorBoundary';
 import { useGesture } from '@use-gesture/react';
@@ -66,7 +66,7 @@ export function MobileLayout() {
   const {
     pdfDoc, pages, currentPage, setCurrentPage,
     isExporting, exportPdf, loadPdfFromFile, pdfFileName,
-    updateEffectiveSettings, detectBlackMargins, isDetecting,
+    detectBlackMargins, isDetecting,
     applySettingsToAllPages, resetToDefaults,
     selectedPaper, setSelectedPaper,
     deletePage, insertBlankPage,
@@ -75,6 +75,19 @@ export function MobileLayout() {
     nudgeCropRect, setCropRect, setLeftCropRect, setRightCropRect,
     undoAction
   } = useScoreStore();
+
+
+  const updateMobileSettings = (partial: Partial<any>) => {
+    const store = useScoreStore.getState();
+    const currentOverride = store.pageOverrides[store.currentPage];
+    if (currentOverride) {
+      store.pageOverrides[store.currentPage] = { ...currentOverride, ...partial };
+      // trigger re-render by calling a dummy state update or explicitly setting overrides
+      useScoreStore.setState({ pageOverrides: { ...store.pageOverrides }, settingsVersion: store.settingsVersion + 1 });
+    } else {
+      store.updateSettings(partial);
+    }
+  };
 
   const globalSettings = useScoreStore(s => s.settings);
   const pageOverrides = useScoreStore(s => s.pageOverrides);
@@ -293,7 +306,7 @@ export function MobileLayout() {
       >
         <div style={{ flex: 1, display: 'flex', width: '100%', height: '100%', transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: 'center center' }}>
           <ErrorBoundary>
-            <ScoreCanvas />
+            <MobileScoreViewer />
           </ErrorBoundary>
         </div>
       </div>
@@ -447,7 +460,7 @@ export function MobileLayout() {
                               color: settings.pageProcessingMode === 'spread_split' ? '#fff' : 'rgba(255,255,255,0.6)',
                               border: 'none', transition: 'all 0.2s'
                             }}
-                            onClick={() => updateEffectiveSettings({ pageProcessingMode: 'spread_split' })}
+                            onClick={() => updateMobileSettings({ pageProcessingMode: 'spread_split' })}
                           >
                             見開き分割
                           </button>
@@ -458,7 +471,7 @@ export function MobileLayout() {
                               color: settings.pageProcessingMode === 'single_fit' ? '#fff' : 'rgba(255,255,255,0.6)',
                               border: 'none', transition: 'all 0.2s'
                             }}
-                            onClick={() => updateEffectiveSettings({ pageProcessingMode: 'single_fit' })}
+                            onClick={() => updateMobileSettings({ pageProcessingMode: 'single_fit' })}
                           >
                             単ページ
                           </button>
@@ -531,16 +544,16 @@ export function MobileLayout() {
                         </button>
                         
                         <label className="checkbox-row" style={{ marginBottom: '20px' }}>
-                          <input type="checkbox" checked={settings.autoCropEnabled} onChange={(e) => updateEffectiveSettings({ autoCropEnabled: e.target.checked })} style={{ transform: 'scale(1.3)' }} />
+                          <input type="checkbox" checked={settings.autoCropEnabled} onChange={(e) => updateMobileSettings({ autoCropEnabled: e.target.checked })} style={{ transform: 'scale(1.3)' }} />
                           <span style={{ fontSize: '16px', marginLeft: '4px' }}>自動トリミングを使う</span>
                         </label>
 
                         <div style={{ borderTop: '1px solid var(--color-border)', margin: '0 -20px 0', padding: '20px 20px 0' }}>
                           <div className="section-title">手動トリム (%)</div>
-                          <DecoupledSlider label="左" value={settings.manualTrimLeftPercent} min={0} max={20} step={0.5} onChange={(v) => updateEffectiveSettings({ manualTrimLeftPercent: v })} />
-                          <DecoupledSlider label="右" value={settings.manualTrimRightPercent} min={0} max={20} step={0.5} onChange={(v) => updateEffectiveSettings({ manualTrimRightPercent: v })} />
-                          <DecoupledSlider label="上" value={settings.manualTrimTopPercent} min={0} max={20} step={0.5} onChange={(v) => updateEffectiveSettings({ manualTrimTopPercent: v })} />
-                          <DecoupledSlider label="下" value={settings.manualTrimBottomPercent} min={0} max={20} step={0.5} onChange={(v) => updateEffectiveSettings({ manualTrimBottomPercent: v })} />
+                          <DecoupledSlider label="左" value={settings.manualTrimLeftPercent} min={0} max={20} step={0.5} onChange={(v) => updateMobileSettings({ manualTrimLeftPercent: v })} />
+                          <DecoupledSlider label="右" value={settings.manualTrimRightPercent} min={0} max={20} step={0.5} onChange={(v) => updateMobileSettings({ manualTrimRightPercent: v })} />
+                          <DecoupledSlider label="上" value={settings.manualTrimTopPercent} min={0} max={20} step={0.5} onChange={(v) => updateMobileSettings({ manualTrimTopPercent: v })} />
+                          <DecoupledSlider label="下" value={settings.manualTrimBottomPercent} min={0} max={20} step={0.5} onChange={(v) => updateMobileSettings({ manualTrimBottomPercent: v })} />
                         </div>
                       </div>
                     )}
@@ -549,12 +562,12 @@ export function MobileLayout() {
                       <div>
                         <div className="section-title">画質設定</div>
                         <label className="checkbox-row" style={{ marginBottom: '16px' }}>
-                          <input type="checkbox" checked={settings.outputColorMode === 'monochrome'} onChange={(e) => updateEffectiveSettings({ outputColorMode: e.target.checked ? 'monochrome' : 'original' })} style={{ transform: 'scale(1.3)' }} />
+                          <input type="checkbox" checked={settings.outputColorMode === 'monochrome'} onChange={(e) => updateMobileSettings({ outputColorMode: e.target.checked ? 'monochrome' : 'original' })} style={{ transform: 'scale(1.3)' }} />
                           <span style={{ fontSize: '16px', marginLeft: '4px' }}>白黒二値化</span>
                         </label>
                         {settings.outputColorMode === 'monochrome' && (
                           <div style={{ padding: '0 8px' }}>
-                            <DecoupledSlider label="二値化しきい値" value={settings.fixedThreshold} min={80} max={230} step={1} onChange={(v) => updateEffectiveSettings({ fixedThreshold: v })} />
+                            <DecoupledSlider label="二値化しきい値" value={settings.fixedThreshold} min={80} max={230} step={1} onChange={(v) => updateMobileSettings({ fixedThreshold: v })} />
                           </div>
                         )}
                       </div>
@@ -565,11 +578,19 @@ export function MobileLayout() {
                         <div>
                           <div className="section-title">個別設定</div>
                           <p style={{ fontSize: '13px', color: 'var(--color-text-muted)', marginBottom: '12px' }}>現在のページの設定を個別保存できます。</p>
-                          <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
-                            <button type="button" className="btn-accent" onClick={() => { savePageOverride(); showToast('個別設定を保存しました'); }} style={{ flex: 1, padding: '12px', borderRadius: '12px', fontWeight: 700, border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                              このページを個別設定にする
-                            </button>
+                          
+                          <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexDirection: 'column' }}>
+                            {!hasOverride ? (
+                              <button type="button" className="btn-accent" onClick={() => { savePageOverride(); showToast('個別設定を有効にしました'); }} style={{ padding: '12px', borderRadius: '12px', fontWeight: 700, border: 'none' }}>
+                                このページだけ個別設定にする
+                              </button>
+                            ) : (
+                              <button type="button" onClick={() => { removePageOverride(); showToast('個別設定を解除しました'); }} style={{ padding: '12px', borderRadius: '12px', fontWeight: 700, border: '1px solid var(--color-danger)', color: 'var(--color-danger)', background: 'transparent' }}>
+                                個別設定を解除して全体に従う
+                              </button>
+                            )}
                           </div>
+
                           {hasOverride && (
                             <div style={{ fontSize: '12px', color: 'var(--color-orange)', fontWeight: 'bold', marginBottom: '8px' }}>
                               [ 個別設定中 ]

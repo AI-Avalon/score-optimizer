@@ -40,8 +40,6 @@ export function ScoreCanvas() {
   const selectedPaper = useScoreStore((s) => s.selectedPaper);
   const isDetecting = useScoreStore((s) => s.isDetecting);
   const touchMode = useScoreStore((s) => s.touchMode);
-  const zoom = useScoreStore((s) => s.zoom);
-  const zoomMode = useScoreStore((s) => s.zoomMode);
 
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
   const [dragging, setDragging] = useState<string | null>(null);
@@ -114,102 +112,71 @@ export function ScoreCanvas() {
       }
 
       try {
-        // 1. 直前タスクのキャンセル
+        // 1. 古いタスクの確実なキャンセル
         if (renderTaskRef.current) {
           renderTaskRef.current.cancel();
-          try { await renderTaskRef.current.promise; } catch(e) {}
           renderTaskRef.current = null;
         }
+        // 2. 古いページメモリの解放
         if (pageObjRef.current) {
-          try { pageObjRef.current.cleanup(); } catch (e) {}
+          pageObjRef.current.cleanup();
           pageObjRef.current = null;
         }
 
-        const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
-        if (isMobile) {
-          // GCを促す微小待機
-          await new Promise((r) => setTimeout(r, 20));
-        }
-
-        if (isCancelled) return;
-
         const page = await (pdfDoc as unknown as { getPage(n: number): Promise<any> }).getPage(pageEntry.sourceIndex + 1);
         if (isCancelled) {
-          try { page.cleanup(); } catch (e) {}
+          page.cleanup();
           return;
         }
         pageObjRef.current = page;
 
-        // 3. モバイルでの解像度クランプ (1.2倍に抑えてメモリクラッシュを物理防御)
-        const dpr = isMobile ? Math.min(window.devicePixelRatio || 1, 1.2) : Math.min(window.devicePixelRatio || 1, 2.0);
+        // 3. モバイルでの解像度クランプ (1.25倍に抑えてメモリクラッシュを物理防御)
+        const isMobile = window.innerWidth < 768;
+        const dpr = isMobile ? Math.min(window.devicePixelRatio || 1, 1.25) : Math.min(window.devicePixelRatio || 1, 2.0);
 
         const unscaledViewport = page.getViewport({ scale: 1.0 });
         const fitScale = Math.min(containerWidth / unscaledViewport.width, containerHeight / unscaledViewport.height);
-        
-        // ★ズーム計算の復元
-        const scale = zoomMode === 'fit' ? fitScale : fitScale * zoom;
-        const viewport = page.getViewport({ scale: scale * dpr });
+        const viewport = page.getViewport({ scale: fitScale * dpr });
 
-        if (isMobile) {
-          // 【モバイル】単一Canvas直接描画（メモリ消費最小化）
+        // ダブルバッファリング：オフスクリーンキャンバスに描画
+        const offscreen = document.createElement('canvas');
+        offscreen.width = viewport.width;
+        offscreen.height = viewport.height;
+        const offCtx = offscreen.getContext('2d', { alpha: false });
+        if (offCtx) {
+          offCtx.fillStyle = '#ffffff';
+          offCtx.fillRect(0, 0, offscreen.width, offscreen.height);
+        }
+
+        const renderContext = {
+          canvasContext: offCtx!,
+          viewport: viewport,
+        };
+
+        const task = page.render(renderContext);
+        renderTaskRef.current = task;
+        await task.promise;
+        
+        // 描画が完了した瞬間にメインキャンバスへ転写
+        if (!isCancelled && canvas) {
           canvas.width = viewport.width;
           canvas.height = viewport.height;
           canvas.style.width = `${viewport.width / dpr}px`;
           canvas.style.height = `${viewport.height / dpr}px`;
-          if (ctx) {
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-          }
-
-          const renderContext = {
-            canvasContext: ctx!,
-            viewport: viewport,
-          };
-
-          const task = page.render(renderContext);
-          renderTaskRef.current = task;
-          await task.promise;
-          setCanvasSize({ width: canvas.width / dpr, height: canvas.height / dpr });
-        } else {
-          // 【PC】ダブルバッファリング（白紙チラつきゼロを維持）
-          const offscreen = document.createElement('canvas');
-          offscreen.width = viewport.width;
-          offscreen.height = viewport.height;
-          const offCtx = offscreen.getContext('2d', { alpha: false });
-          if (offCtx) {
-            offCtx.fillStyle = '#ffffff';
-            offCtx.fillRect(0, 0, offscreen.width, offscreen.height);
-          }
-
-          const renderContext = {
-            canvasContext: offCtx!,
-            viewport: viewport,
-          };
-
-          const task = page.render(renderContext);
-          renderTaskRef.current = task;
-          await task.promise;
           
-          // 描画が完了した瞬間にメインキャンバスへ転写
-          if (!isCancelled && canvas) {
-            canvas.width = viewport.width;
-            canvas.height = viewport.height;
-            canvas.style.width = `${viewport.width / dpr}px`;
-            canvas.style.height = `${viewport.height / dpr}px`;
-            
-            if (ctx) {
-              ctx.drawImage(offscreen, 0, 0);
-            }
-            setCanvasSize({ width: canvas.width / dpr, height: canvas.height / dpr });
+          if (ctx) {
+            ctx.drawImage(offscreen, 0, 0);
           }
-
-          // 作業用メモリを即時解放
-          offscreen.width = 0;
-          offscreen.height = 0;
+          setCanvasSize({ width: canvas.width / dpr, height: canvas.height / dpr });
         }
+
+        // 作業用メモリを即時解放
+        offscreen.width = 0;
+        offscreen.height = 0;
       } catch (err: any) {
         if (err?.name !== 'RenderingCancelledException' && !err?.message?.includes('cancelled')) {
           console.error('Render error:', err);
+          // エラートースト等を表示するならここで処理（今回はロード画面に巻き戻さない）
         }
       }
     };
@@ -249,12 +216,13 @@ export function ScoreCanvas() {
         renderTaskRef.current = null;
       }
       if (pageObjRef.current) {
-        // 4. ★レンダリング中断直後の例外を必ずキャッチして握りつぶす
-        try { pageObjRef.current.cleanup(); } catch (e) {}
+        if (typeof pageObjRef.current.cleanup === 'function') {
+          pageObjRef.current.cleanup();
+        }
         pageObjRef.current = null;
       }
     };
-  }, [pdfDoc, currentPage, pages, settingsVersion, zoom, zoomMode]);
+  }, [pdfDoc, currentPage, pages, settingsVersion]);
 
   // ── Keyboard Nudge Controls ─────────────────────────────────────
   useEffect(() => {
@@ -311,8 +279,7 @@ export function ScoreCanvas() {
   // ── Handle Drag ─────────────────────────────────────────────────
   const handlePointerDown = useCallback(
     (handleId: string, frameId: 'main' | 'left' | 'right', rect: NormalizedRect, e: React.PointerEvent) => {
-      const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
-      if (isMobile && touchMode === 'scroll') return;
+      if (touchMode === 'scroll') return;
       e.preventDefault();
       e.stopPropagation();
       setDragging(handleId);
@@ -474,7 +441,6 @@ export function ScoreCanvas() {
 
   // ── Render Helpers ──────────────────────────────────────────────
   const renderCropOverlay = (rect: NormalizedRect, frameId: 'main' | 'left' | 'right', color: string) => {
-    const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
     const left = cx + rect.x * canvasSize.width;
     const top = cy + rect.y * canvasSize.height;
     const width = rect.width * canvasSize.width;
@@ -506,7 +472,7 @@ export function ScoreCanvas() {
             borderRadius: '1px',
             pointerEvents: 'none',
             zIndex: isActive ? 6 : 5,
-            opacity: (isMobile && touchMode === 'scroll') ? 0.3 : (dragging === 'c' && isActive ? 0.5 : 1),
+            opacity: touchMode === 'scroll' ? 0.3 : (dragging === 'c' && isActive ? 0.5 : 1),
             backgroundColor: dragging === 'c' && isActive ? `${color}1A` : 'transparent',
             transition: 'opacity 0.2s ease',
           }}
@@ -543,8 +509,8 @@ export function ScoreCanvas() {
                 cursor: h.cursor,
                 zIndex: isActive ? 11 : 10,
                 borderColor: color,
-                opacity: (isMobile && touchMode === 'scroll') ? 0 : 1,
-                pointerEvents: (isMobile && touchMode === 'scroll') ? 'none' : 'auto',
+                opacity: touchMode === 'scroll' ? 0 : 1,
+                pointerEvents: touchMode === 'scroll' ? 'none' : 'auto',
                 transition: 'opacity 0.2s ease',
               }}
             />
@@ -566,7 +532,7 @@ export function ScoreCanvas() {
       style={{
         flex: 1,
         position: 'relative',
-        overflow: zoomMode === 'fit' ? 'hidden' : 'auto',
+        overflow: 'hidden',
         background: '#111318',
         display: 'flex',
         alignItems: 'center',
@@ -619,9 +585,8 @@ export function ScoreCanvas() {
         ref={canvasRef}
         style={{
           display: pdfDoc ? 'block' : 'none',
-          maxWidth: zoomMode === 'fit' ? '100%' : 'none',
-          maxHeight: zoomMode === 'fit' ? '100%' : 'none',
-          flexShrink: 0,
+          maxWidth: '100%',
+          maxHeight: '100%',
         }}
       />
 

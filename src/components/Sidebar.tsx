@@ -50,7 +50,7 @@ function DecoupledSlider({ label, value, min, max, step, onChange }: { label: st
 }
 
 export function Sidebar() {
-  const updateEffectiveSettings = useScoreStore((s) => s.updateEffectiveSettings);
+  const updateSettings = useScoreStore((s) => s.updateSettings);
   const detectBlackMargins = useScoreStore((s) => s.detectBlackMargins);
   const isDetecting = useScoreStore((s) => s.isDetecting);
   const savePageOverride = useScoreStore((s) => s.savePageOverride);
@@ -283,8 +283,8 @@ export function Sidebar() {
       <div className="settings-section">
         <div className="section-title">ページ処理モード</div>
         <div className="radio-group">
-          {radio<PageProcessingMode>(settings.pageProcessingMode, 'spread_split', '見開き分割', 'mode-spread', (v) => updateEffectiveSettings({ pageProcessingMode: v }))}
-          {radio<PageProcessingMode>(settings.pageProcessingMode, 'single_fit', '単ページ', 'mode-single', (v) => updateEffectiveSettings({ pageProcessingMode: v }))}
+          {radio<PageProcessingMode>(settings.pageProcessingMode, 'spread_split', '見開き分割', 'mode-spread', (v) => updateSettings({ pageProcessingMode: v }))}
+          {radio<PageProcessingMode>(settings.pageProcessingMode, 'single_fit', '単ページ', 'mode-single', (v) => updateSettings({ pageProcessingMode: v }))}
         </div>
       </div>
 
@@ -292,8 +292,8 @@ export function Sidebar() {
       <div className="settings-section">
         <div className="section-title">出力色</div>
         <div className="radio-group">
-          {radio<OutputColorMode>(settings.outputColorMode, 'monochrome', '白黒', 'color-mono', (v) => updateEffectiveSettings({ outputColorMode: v }))}
-          {radio<OutputColorMode>(settings.outputColorMode, 'original', '元のまま', 'color-orig', (v) => updateEffectiveSettings({ outputColorMode: v }))}
+          {radio<OutputColorMode>(settings.outputColorMode, 'monochrome', '白黒', 'color-mono', (v) => updateSettings({ outputColorMode: v }))}
+          {radio<OutputColorMode>(settings.outputColorMode, 'original', '元のまま', 'color-orig', (v) => updateSettings({ outputColorMode: v }))}
         </div>
       </div>
 
@@ -305,7 +305,7 @@ export function Sidebar() {
           <input
             type="checkbox"
             checked={settings.autoCropEnabled}
-            onChange={(e) => updateEffectiveSettings({ autoCropEnabled: e.target.checked })}
+            onChange={(e) => updateSettings({ autoCropEnabled: e.target.checked })}
           />
           自動トリミングを使う
         </label>
@@ -320,41 +320,41 @@ export function Sidebar() {
           {isDetecting ? '検出中...' : '黒枠を自動検出'}
         </button>
 
-        <DecoupledSlider label="黒余白しきい値" value={settings.blackMarginThreshold} min={0} max={80} step={1} onChange={(v) => updateEffectiveSettings({ blackMarginThreshold: v })} />
-        <DecoupledSlider label="クロップ余白 (px)" value={settings.cropPaddingPx} min={0} max={40} step={1} onChange={(v) => updateEffectiveSettings({ cropPaddingPx: v })} />
+        <DecoupledSlider label="黒余白しきい値" value={settings.blackMarginThreshold} min={0} max={80} step={1} onChange={(v) => updateSettings({ blackMarginThreshold: v })} />
+        <DecoupledSlider label="クロップ余白 (px)" value={settings.cropPaddingPx} min={0} max={40} step={1} onChange={(v) => updateSettings({ cropPaddingPx: v })} />
 
         <label className="checkbox-row" style={{ marginBottom: '8px' }}>
           <input
             type="checkbox"
             checked={settings.useAdaptiveThreshold}
-            onChange={(e) => updateEffectiveSettings({ useAdaptiveThreshold: e.target.checked })}
+            onChange={(e) => updateSettings({ useAdaptiveThreshold: e.target.checked })}
           />
           適応的二値化（照明ムラ向け）
         </label>
 
-        <DecoupledSlider label="固定二値化しきい値" value={settings.fixedThreshold} min={80} max={230} step={1} onChange={(v) => updateEffectiveSettings({ fixedThreshold: v })} />
+        <DecoupledSlider label="固定二値化しきい値" value={settings.fixedThreshold} min={80} max={230} step={1} onChange={(v) => updateSettings({ fixedThreshold: v })} />
       </div>
 
       {/* ── 4. 手動トリム ────────────────────────────────────── */}
       <div className="settings-section">
         <div className="section-title">手動トリム (%)</div>
-        <DecoupledSlider label="左" value={settings.manualTrimLeftPercent} min={0} max={20} step={0.5} onChange={(v) => updateEffectiveSettings({ manualTrimLeftPercent: v })} />
-        <DecoupledSlider label="右" value={settings.manualTrimRightPercent} min={0} max={20} step={0.5} onChange={(v) => updateEffectiveSettings({ manualTrimRightPercent: v })} />
-        <DecoupledSlider label="上" value={settings.manualTrimTopPercent} min={0} max={20} step={0.5} onChange={(v) => updateEffectiveSettings({ manualTrimTopPercent: v })} />
-        <DecoupledSlider label="下" value={settings.manualTrimBottomPercent} min={0} max={20} step={0.5} onChange={(v) => updateEffectiveSettings({ manualTrimBottomPercent: v })} />
+        <DecoupledSlider label="左" value={settings.manualTrimLeftPercent} min={0} max={20} step={0.5} onChange={(v) => updateSettings({ manualTrimLeftPercent: v })} />
+        <DecoupledSlider label="右" value={settings.manualTrimRightPercent} min={0} max={20} step={0.5} onChange={(v) => updateSettings({ manualTrimRightPercent: v })} />
+        <DecoupledSlider label="上" value={settings.manualTrimTopPercent} min={0} max={20} step={0.5} onChange={(v) => updateSettings({ manualTrimTopPercent: v })} />
+        <DecoupledSlider label="下" value={settings.manualTrimBottomPercent} min={0} max={20} step={0.5} onChange={(v) => updateSettings({ manualTrimBottomPercent: v })} />
       </div>
 
       {/* ── 5. 見開き設定 (spread_split のみ) ────────────────── */}
       {settings.pageProcessingMode === 'spread_split' && (
         <div className="settings-section">
           <div className="section-title">見開き設定</div>
-          <DecoupledSlider label="分割位置補正 (%)" value={settings.splitOffsetPercent} min={-20} max={20} step={0.5} onChange={(v) => updateEffectiveSettings({ splitOffsetPercent: v })} />
+          <DecoupledSlider label="分割位置補正 (%)" value={settings.splitOffsetPercent} min={-20} max={20} step={0.5} onChange={(v) => updateSettings({ splitOffsetPercent: v })} />
           
           <label className="checkbox-row" style={{ marginTop: '12px', marginBottom: '12px' }}>
             <input
               type="checkbox"
               checked={settings.independentSplitFrames}
-              onChange={(e) => updateEffectiveSettings({ independentSplitFrames: e.target.checked })}
+              onChange={(e) => updateSettings({ independentSplitFrames: e.target.checked })}
             />
             左右個別枠を有効にする
           </label>
@@ -362,8 +362,8 @@ export function Sidebar() {
           <div style={{ marginTop: '8px' }}>
             <span className="setting-label" style={{ display: 'block', marginBottom: '6px' }}>ページ順</span>
             <div className="radio-group">
-              {radio<PageOrder>(settings.pageOrder, 'left_to_right', '左→右', 'order-ltr', (v) => updateEffectiveSettings({ pageOrder: v }))}
-              {radio<PageOrder>(settings.pageOrder, 'right_to_left', '右→左', 'order-rtl', (v) => updateEffectiveSettings({ pageOrder: v }))}
+              {radio<PageOrder>(settings.pageOrder, 'left_to_right', '左→右', 'order-ltr', (v) => updateSettings({ pageOrder: v }))}
+              {radio<PageOrder>(settings.pageOrder, 'right_to_left', '右→左', 'order-rtl', (v) => updateSettings({ pageOrder: v }))}
             </div>
           </div>
         </div>
@@ -380,16 +380,16 @@ export function Sidebar() {
             min={1}
             max={999}
             value={settings.bodyStartPage}
-            onChange={(e) => updateEffectiveSettings({ bodyStartPage: Math.max(1, Number(e.target.value) || 1) })}
+            onChange={(e) => updateSettings({ bodyStartPage: Math.max(1, Number(e.target.value) || 1) })}
           />
         </div>
 
         <div style={{ marginTop: '8px' }}>
           <span className="setting-label" style={{ display: 'block', marginBottom: '6px' }}>本文前ページの扱い</span>
           <div className="radio-group">
-            {radio<FrontMatterMode>(settings.frontMatterMode, 'single', '単ページ', 'fm-single', (v) => updateEffectiveSettings({ frontMatterMode: v }))}
-            {radio<FrontMatterMode>(settings.frontMatterMode, 'split', '見開き', 'fm-split', (v) => updateEffectiveSettings({ frontMatterMode: v }))}
-            {radio<FrontMatterMode>(settings.frontMatterMode, 'skip', 'スキップ', 'fm-skip', (v) => updateEffectiveSettings({ frontMatterMode: v }))}
+            {radio<FrontMatterMode>(settings.frontMatterMode, 'single', '単ページ', 'fm-single', (v) => updateSettings({ frontMatterMode: v }))}
+            {radio<FrontMatterMode>(settings.frontMatterMode, 'split', '見開き', 'fm-split', (v) => updateSettings({ frontMatterMode: v }))}
+            {radio<FrontMatterMode>(settings.frontMatterMode, 'skip', 'スキップ', 'fm-skip', (v) => updateSettings({ frontMatterMode: v }))}
           </div>
         </div>
       </div>
