@@ -69,7 +69,9 @@ export default function App() {
   if (isMobile) {
     return (
       <DropZone>
-        <MobileLayout />
+        <ErrorBoundary>
+          <MobileLayout />
+        </ErrorBoundary>
         <ProgressModal />
         <HelpModal />
       </DropZone>

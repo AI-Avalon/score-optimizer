@@ -40,6 +40,8 @@ export function ScoreCanvas() {
   const selectedPaper = useScoreStore((s) => s.selectedPaper);
   const isDetecting = useScoreStore((s) => s.isDetecting);
   const touchMode = useScoreStore((s) => s.touchMode);
+  const zoom = useScoreStore((s) => s.zoom);
+  const zoomMode = useScoreStore((s) => s.zoomMode);
 
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
   const [dragging, setDragging] = useState<string | null>(null);
@@ -131,12 +133,13 @@ export function ScoreCanvas() {
         pageObjRef.current = page;
 
         // 3. モバイルでの解像度クランプ (1.25倍に抑えてメモリクラッシュを物理防御)
-        const isMobile = window.innerWidth < 768;
+        const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
         const dpr = isMobile ? Math.min(window.devicePixelRatio || 1, 1.25) : Math.min(window.devicePixelRatio || 1, 2.0);
 
         const unscaledViewport = page.getViewport({ scale: 1.0 });
         const fitScale = Math.min(containerWidth / unscaledViewport.width, containerHeight / unscaledViewport.height);
-        const viewport = page.getViewport({ scale: fitScale * dpr });
+        const scale = zoomMode === 'fit' ? fitScale : fitScale * zoom;
+        const viewport = page.getViewport({ scale: scale * dpr });
 
         // ダブルバッファリング：オフスクリーンキャンバスに描画
         const offscreen = document.createElement('canvas');
@@ -217,12 +220,14 @@ export function ScoreCanvas() {
       }
       if (pageObjRef.current) {
         if (typeof pageObjRef.current.cleanup === 'function') {
-          pageObjRef.current.cleanup();
+          try {
+            pageObjRef.current.cleanup();
+          } catch (e) {}
         }
         pageObjRef.current = null;
       }
     };
-  }, [pdfDoc, currentPage, pages, settingsVersion]);
+  }, [pdfDoc, currentPage, pages, settingsVersion, zoom, zoomMode]);
 
   // ── Keyboard Nudge Controls ─────────────────────────────────────
   useEffect(() => {
@@ -279,7 +284,8 @@ export function ScoreCanvas() {
   // ── Handle Drag ─────────────────────────────────────────────────
   const handlePointerDown = useCallback(
     (handleId: string, frameId: 'main' | 'left' | 'right', rect: NormalizedRect, e: React.PointerEvent) => {
-      if (touchMode === 'scroll') return;
+      const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+      if (isMobile && touchMode === 'scroll') return;
       e.preventDefault();
       e.stopPropagation();
       setDragging(handleId);
@@ -441,6 +447,7 @@ export function ScoreCanvas() {
 
   // ── Render Helpers ──────────────────────────────────────────────
   const renderCropOverlay = (rect: NormalizedRect, frameId: 'main' | 'left' | 'right', color: string) => {
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
     const left = cx + rect.x * canvasSize.width;
     const top = cy + rect.y * canvasSize.height;
     const width = rect.width * canvasSize.width;
@@ -472,7 +479,7 @@ export function ScoreCanvas() {
             borderRadius: '1px',
             pointerEvents: 'none',
             zIndex: isActive ? 6 : 5,
-            opacity: touchMode === 'scroll' ? 0.3 : (dragging === 'c' && isActive ? 0.5 : 1),
+            opacity: (isMobile && touchMode === 'scroll') ? 0.3 : (dragging === 'c' && isActive ? 0.5 : 1),
             backgroundColor: dragging === 'c' && isActive ? `${color}1A` : 'transparent',
             transition: 'opacity 0.2s ease',
           }}
@@ -509,8 +516,8 @@ export function ScoreCanvas() {
                 cursor: h.cursor,
                 zIndex: isActive ? 11 : 10,
                 borderColor: color,
-                opacity: touchMode === 'scroll' ? 0 : 1,
-                pointerEvents: touchMode === 'scroll' ? 'none' : 'auto',
+                opacity: (isMobile && touchMode === 'scroll') ? 0 : 1,
+                pointerEvents: (isMobile && touchMode === 'scroll') ? 'none' : 'auto',
                 transition: 'opacity 0.2s ease',
               }}
             />
@@ -532,7 +539,7 @@ export function ScoreCanvas() {
       style={{
         flex: 1,
         position: 'relative',
-        overflow: 'hidden',
+        overflow: zoomMode === 'fit' ? 'hidden' : 'auto',
         background: '#111318',
         display: 'flex',
         alignItems: 'center',
@@ -585,8 +592,9 @@ export function ScoreCanvas() {
         ref={canvasRef}
         style={{
           display: pdfDoc ? 'block' : 'none',
-          maxWidth: '100%',
-          maxHeight: '100%',
+          maxWidth: zoomMode === 'fit' ? '100%' : 'none',
+          maxHeight: zoomMode === 'fit' ? '100%' : 'none',
+          flexShrink: 0,
         }}
       />
 
