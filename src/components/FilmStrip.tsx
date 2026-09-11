@@ -79,8 +79,9 @@ export function FilmStrip() {
           tempCanvas.width = 0;
           tempCanvas.height = 0;
           try {
-            const res = pdfPage.cleanup();
-            if (res && typeof res.catch === 'function') res.catch(() => {});
+            if (typeof pdfPage.cleanup === 'function') {
+              pdfPage.cleanup();
+            }
           } catch (e) {}
           // UIスレッドとGCに制御を戻す (モバイルクラッシュ防止)
           await new Promise(r => setTimeout(r, 30));
