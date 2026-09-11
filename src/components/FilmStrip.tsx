@@ -41,7 +41,7 @@ export function FilmStrip() {
 
     let isCancelled = false;
     const renderThumbs = async () => {
-      const newUrls = new Map<number, string>();
+      const newUrls = new Map<number, string>(thumbUrls);
       const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
       
       for (let i = 0; i < pages.length; i++) {
@@ -51,6 +51,8 @@ export function FilmStrip() {
         if (page.isBlank || page.deleted) {
           continue;
         }
+
+        if (thumbUrls.has(i)) continue; // ★既に描画済みならスキップ
 
         // モバイル環境では前後2ページのみに限定（メモリ節約）
         if (isMobile && Math.abs(i - currentPage) > 2) {
@@ -108,7 +110,7 @@ export function FilmStrip() {
       isCancelled = true;
       thumbRenderers.current.forEach((r) => r.cancel());
     };
-  }, [pdfDoc, pages, settingsVersion, currentPage]);
+  }, [pdfDoc, pages, settingsVersion]);
 
   const handleClick = useCallback(
     (pageIdx: number) => {

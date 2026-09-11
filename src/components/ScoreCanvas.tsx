@@ -125,11 +125,6 @@ export function ScoreCanvas() {
           pageObjRef.current = null;
         }
 
-        // 2. Worker内の展開画像メモリを強制パージ（WebKit OOMの物理遮断）
-        if (typeof (pdfDoc as any).cleanup === 'function') {
-          (pdfDoc as any).cleanup();
-        }
-
         const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
         if (isMobile) {
           // GCを促す微小待機

@@ -102,7 +102,7 @@ interface ScoreState {
   // Actions
   loadPdfFromFile: (file: File) => Promise<void>;
   setCurrentPage: (page: number) => void;
-  updateSettings: (partial: Partial<ProcessSettings>) => void;
+  updateEffectiveSettings: (partial: Partial<ProcessSettings>) => void;
   setZoom: (zoom: number) => void;
   setPan: (pan: { x: number; y: number } | ((prev: { x: number; y: number }) => { x: number; y: number })) => void;
   setTouchMode: (mode: 'scroll' | 'crop') => void;
@@ -113,7 +113,7 @@ interface ScoreState {
   detectBlackMargins: () => Promise<void>;
   savePageOverride: () => void;
   removePageOverride: () => void;
-  getEffectiveSettings: (pageIndex: number) => ProcessSettings;
+  getEffectiveSettings: (pageIndex?: number) => ProcessSettings;
   getEffectiveCropRect: () => NormalizedRect;
   exportPdf: () => Promise<void>;
   setSidebarOpen: (open: boolean) => void;
@@ -129,7 +129,6 @@ interface ScoreState {
   setCustomPaperMm: (w: number, h: number) => void;
   setMarginMm: (mm: number) => void;
   getPaperConfig: () => { widthPt: number; heightPt: number };
-
   // ページ操作アクション
   deletePage: (index: number) => void;
   undoAction: () => void;
@@ -259,7 +258,7 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
 
       // 自動黒枠検出と最適なDPIの推定
       try {
-        const page = await doc.getPage(1) as unknown as { getViewport: (p: {scale: number}) => {width: number} };
+        const page = await doc.getPage(1) as unknown as { getViewport: (p: { scale: number }) => { width: number } };
         const vp = page.getViewport({ scale: 1 });
         // ざっくり推定 (595pt=A4 に対して 2倍以上なら 600DPI相当、など)
         let estimatedDpi = 300;
@@ -267,7 +266,7 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
         else if (vp.width > 1500) estimatedDpi = 400;
         else if (vp.width < 500) estimatedDpi = 150;
         set({ exportDpi: estimatedDpi });
-      } catch(e) {}
+      } catch (e) { }
 
       get().detectBlackMargins();
     } catch (err) {
@@ -289,18 +288,20 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
     }
   },
 
-  updateSettings: (partial: Partial<ProcessSettings>) => {
+  updateEffectiveSettings: (partial: Partial<ProcessSettings>) => {
     const state = get();
     const override = state.pageOverrides[state.currentPage];
-    
+
     if (override) {
       const newOverride = { ...override };
-      let hasOverrideChanges = false;
       const newGlobalSettings = { ...state.settings };
+      let hasOverrideChanges = false;
       let hasGlobalChanges = false;
 
+      const overrideKeys = ['pageProcessingMode', 'splitOffsetPercent', 'pageOrder', 'blackMarginThreshold', 'cropPaddingPx', 'autoCropEnabled', 'manualTrimLeftPercent', 'manualTrimRightPercent', 'manualTrimTopPercent', 'manualTrimBottomPercent', 'useAdaptiveThreshold', 'fixedThreshold', 'outputColorMode', 'independentSplitFrames'];
+
       for (const [key, value] of Object.entries(partial)) {
-        if (key in newOverride) {
+        if (overrideKeys.includes(key)) {
           (newOverride as any)[key] = value;
           hasOverrideChanges = true;
         } else {
@@ -313,26 +314,25 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
         state.pageOverrides[state.currentPage] = newOverride;
         set({ pageOverrides: { ...state.pageOverrides } });
       }
-      
-      const effective = get().getEffectiveSettings(state.currentPage);
+
+      const effective = get().getEffectiveSettings();
       const newCrop = computeCropRect(effective, state.detectedCropRect);
-      
+
       if (hasGlobalChanges) {
-        set({ settings: newGlobalSettings, cropRect: newCrop, leftCropRect: newCrop, rightCropRect: newCrop });
+        set({ settings: newGlobalSettings, cropRect: newCrop, leftCropRect: newCrop, rightCropRect: newCrop, settingsVersion: state.settingsVersion + 1 });
       } else if (hasOverrideChanges) {
-        set({ cropRect: newCrop, leftCropRect: newCrop, rightCropRect: newCrop });
+        set({ cropRect: newCrop, leftCropRect: newCrop, rightCropRect: newCrop, settingsVersion: state.settingsVersion + 1 });
       }
     } else {
       const newSettings = { ...state.settings, ...partial };
       const newCrop = computeCropRect(newSettings, state.detectedCropRect);
-      set({ settings: newSettings, cropRect: newCrop, leftCropRect: newCrop, rightCropRect: newCrop });
+      set({ settings: newSettings, cropRect: newCrop, leftCropRect: newCrop, rightCropRect: newCrop, settingsVersion: state.settingsVersion + 1 });
     }
   },
 
   setSplitOffsetPercent: (percent: number) => {
     // cropRect を再計算・初期化せずに splitOffsetPercent のみ更新
-    const state = get();
-    set({ settings: { ...state.settings, splitOffsetPercent: percent } });
+    get().updateEffectiveSettings({ splitOffsetPercent: percent });
   },
 
   setZoom: (zoom: number) => {
@@ -462,9 +462,10 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
 
   // ── app.py L499-521 _effective_settings_for_page 完全移植 ──────
 
-  getEffectiveSettings: (pageIndex: number): ProcessSettings => {
+  getEffectiveSettings: (pageIndex?: number): ProcessSettings => {
     const state = get();
-    const override = state.pageOverrides[pageIndex];
+    const idx = pageIndex ?? state.currentPage;
+    const override = state.pageOverrides[idx];
     if (!override) return state.settings;
 
     return {
@@ -706,8 +707,8 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
 
   applySettingsToAllPages: () => {
     const state = get();
-    const effective = get().getEffectiveSettings(state.currentPage);
-    
+    const effective = get().getEffectiveSettings();
+
     // 全ページの個別オーバーライドを破棄して、ドキュメント共通設定として適用する
     set({
       settings: { ...effective },
@@ -719,8 +720,8 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
 
   applySettingsToRemainingPages: () => {
     const state = get();
-    const effective = get().getEffectiveSettings(state.currentPage);
-    
+    const effective = get().getEffectiveSettings();
+
     // 現在のページの設定を、現在のページ以降のすべてのページに個別オーバーライドとして適用する
     const newOverrides = { ...state.pageOverrides };
     for (let i = state.currentPage; i < state.pages.length; i++) {

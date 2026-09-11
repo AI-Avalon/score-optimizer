@@ -66,7 +66,7 @@ export function MobileLayout() {
   const {
     pdfDoc, pages, currentPage, setCurrentPage,
     isExporting, exportPdf, loadPdfFromFile, pdfFileName,
-    updateSettings, detectBlackMargins, isDetecting,
+    updateEffectiveSettings, detectBlackMargins, isDetecting,
     applySettingsToAllPages, resetToDefaults,
     selectedPaper, setSelectedPaper,
     deletePage, insertBlankPage,
@@ -84,9 +84,23 @@ export function MobileLayout() {
   const removePageOverride = useScoreStore((s) => s.removePageOverride);
   const setIsHelpOpen = useScoreStore((s) => s.setIsHelpOpen);
 
+  const exportDpi = useScoreStore(s => s.exportDpi);
+  const setExportDpi = useScoreStore(s => s.setExportDpi);
+  const customPaperMm = useScoreStore(s => s.customPaperMm);
+  const setCustomPaperMm = useScoreStore(s => s.setCustomPaperMm);
+  const marginMm = useScoreStore(s => s.marginMm);
+  const setMarginMm = useScoreStore(s => s.setMarginMm);
+  const isAspectRatioLocked = useScoreStore(s => s.isAspectRatioLocked);
+  const setIsAspectRatioLocked = useScoreStore(s => s.setIsAspectRatioLocked);
+  const savePageOverride = useScoreStore(s => s.savePageOverride);
+  const rotatePage = useScoreStore(s => s.rotatePage);
+  const rotateOddPages = useScoreStore(s => s.rotateOddPages);
+  const rotateEvenPages = useScoreStore(s => s.rotateEvenPages);
+  const rotateAllPages = useScoreStore(s => s.rotateAllPages);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeSheet, setActiveSheet] = useState<'none' | 'settings' | 'thumbnails' | 'nudge'>('none');
-  const [activeTab, setActiveTab] = useState<'paper' | 'crop' | 'filter'>('paper');
+  const [activeTab, setActiveTab] = useState<'paper' | 'crop' | 'filter' | 'page'>('paper');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   
   const handleFileSelect = useCallback(
@@ -368,7 +382,7 @@ export function MobileLayout() {
               {activeSheet === 'nudge' && (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', padding: '0 24px 24px' }}>
                   <div style={{ fontSize: '18px', fontWeight: 700 }}>枠微動 (Nudge)</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
                     <div />
                     <button type="button" className="btn btn-surface" style={{ height: '64px', borderRadius: '16px' }} onClick={() => doNudge(0, -0.005)}><ArrowUp size={24} /></button>
                     <div />
@@ -404,7 +418,7 @@ export function MobileLayout() {
                 <div style={{ display: 'flex', flexDirection: 'column', height: '100%', flex: 1 }}>
                   {/* シートヘッダー & タブ切り替えバー */}
                   <div style={{ flexShrink: 0, borderBottom: '1px solid var(--color-border)', padding: '0 16px 12px' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px', background: 'var(--color-surface)', padding: '4px', borderRadius: '12px', fontSize: '12px', fontWeight: 600 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px', background: 'var(--color-surface)', padding: '4px', borderRadius: '12px', fontSize: '12px', fontWeight: 600 }}>
                       <button type="button" onClick={() => setActiveTab('paper')} style={{ padding: '8px 4px', borderRadius: '8px', background: activeTab === 'paper' ? 'var(--color-accent)' : 'transparent', color: activeTab === 'paper' ? '#fff' : 'var(--color-text-muted)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', border: 'none' }}>
                         <FileText size={16} /> 用紙・モード
                       </button>
@@ -413,6 +427,9 @@ export function MobileLayout() {
                       </button>
                       <button type="button" onClick={() => setActiveTab('filter')} style={{ padding: '8px 4px', borderRadius: '8px', background: activeTab === 'filter' ? 'var(--color-accent)' : 'transparent', color: activeTab === 'filter' ? '#fff' : 'var(--color-text-muted)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', border: 'none' }}>
                         <SlidersHorizontal size={16} /> 画質・二値化
+                      </button>
+                      <button type="button" onClick={() => setActiveTab('page')} style={{ padding: '8px 4px', borderRadius: '8px', background: activeTab === 'page' ? 'var(--color-accent)' : 'transparent', color: activeTab === 'page' ? '#fff' : 'var(--color-text-muted)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', border: 'none' }}>
+                        <Settings size={16} /> 個別・回転
                       </button>
                     </div>
                   </div>
@@ -430,7 +447,7 @@ export function MobileLayout() {
                               color: settings.pageProcessingMode === 'spread_split' ? '#fff' : 'rgba(255,255,255,0.6)',
                               border: 'none', transition: 'all 0.2s'
                             }}
-                            onClick={() => updateSettings({ pageProcessingMode: 'spread_split' })}
+                            onClick={() => updateEffectiveSettings({ pageProcessingMode: 'spread_split' })}
                           >
                             見開き分割
                           </button>
@@ -441,7 +458,7 @@ export function MobileLayout() {
                               color: settings.pageProcessingMode === 'single_fit' ? '#fff' : 'rgba(255,255,255,0.6)',
                               border: 'none', transition: 'all 0.2s'
                             }}
-                            onClick={() => updateSettings({ pageProcessingMode: 'single_fit' })}
+                            onClick={() => updateEffectiveSettings({ pageProcessingMode: 'single_fit' })}
                           >
                             単ページ
                           </button>
@@ -462,6 +479,45 @@ export function MobileLayout() {
                             <option value="us_letter">US Letter</option>
                             <option value="custom">カスタム (mm入力)</option>
                           </select>
+
+                          {selectedPaper === 'custom' && (
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>幅 (mm)</span>
+                                <input type="number" value={customPaperMm.w} onChange={(e) => setCustomPaperMm(Number(e.target.value) || 210, customPaperMm.h)} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-base)', color: '#fff' }} min={50} max={1000} />
+                              </div>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>高さ (mm)</span>
+                                <input type="number" value={customPaperMm.h} onChange={(e) => setCustomPaperMm(customPaperMm.w, Number(e.target.value) || 297)} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-base)', color: '#fff' }} min={50} max={1000} />
+                              </div>
+                            </div>
+                          )}
+
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>余白 (mm)</span>
+                              <input type="number" value={marginMm} onChange={(e) => setMarginMm(Number(e.target.value) || 0)} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-base)', color: '#fff' }} min={0} max={50} />
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>アスペクト比</span>
+                              <button type="button" onClick={() => setIsAspectRatioLocked(!isAspectRatioLocked)} style={{ padding: '12px', borderRadius: '8px', border: isAspectRatioLocked ? '1px solid var(--color-accent)' : '1px solid var(--color-border)', background: isAspectRatioLocked ? 'rgba(79, 70, 229, 0.1)' : 'var(--color-base)', color: isAspectRatioLocked ? 'var(--color-accent)' : 'var(--color-text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600 }}>
+                                {isAspectRatioLocked ? '固定' : '自由'}
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="section-title">出力DPI</div>
+                          <select
+                            value={exportDpi}
+                            onChange={(e) => setExportDpi(Number(e.target.value))}
+                            style={{ width: '100%', padding: '16px', borderRadius: '12px', background: 'var(--color-surface)', color: 'var(--color-text)', border: '1px solid var(--color-border)', fontSize: '16px', outline: 'none', appearance: 'none', marginBottom: '16px' }}
+                          >
+                            <option value={150}>150 DPI (軽量)</option>
+                            <option value={200}>200 DPI</option>
+                            <option value={300}>300 DPI (標準印刷)</option>
+                            <option value={400}>400 DPI (高精細)</option>
+                            <option value={600}>600 DPI (最高峰)</option>
+                          </select>
                         </div>
                       </>
                     )}
@@ -475,16 +531,16 @@ export function MobileLayout() {
                         </button>
                         
                         <label className="checkbox-row" style={{ marginBottom: '20px' }}>
-                          <input type="checkbox" checked={settings.autoCropEnabled} onChange={(e) => updateSettings({ autoCropEnabled: e.target.checked })} style={{ transform: 'scale(1.3)' }} />
+                          <input type="checkbox" checked={settings.autoCropEnabled} onChange={(e) => updateEffectiveSettings({ autoCropEnabled: e.target.checked })} style={{ transform: 'scale(1.3)' }} />
                           <span style={{ fontSize: '16px', marginLeft: '4px' }}>自動トリミングを使う</span>
                         </label>
 
                         <div style={{ borderTop: '1px solid var(--color-border)', margin: '0 -20px 0', padding: '20px 20px 0' }}>
                           <div className="section-title">手動トリム (%)</div>
-                          <DecoupledSlider label="左" value={settings.manualTrimLeftPercent} min={0} max={20} step={0.5} onChange={(v) => updateSettings({ manualTrimLeftPercent: v })} />
-                          <DecoupledSlider label="右" value={settings.manualTrimRightPercent} min={0} max={20} step={0.5} onChange={(v) => updateSettings({ manualTrimRightPercent: v })} />
-                          <DecoupledSlider label="上" value={settings.manualTrimTopPercent} min={0} max={20} step={0.5} onChange={(v) => updateSettings({ manualTrimTopPercent: v })} />
-                          <DecoupledSlider label="下" value={settings.manualTrimBottomPercent} min={0} max={20} step={0.5} onChange={(v) => updateSettings({ manualTrimBottomPercent: v })} />
+                          <DecoupledSlider label="左" value={settings.manualTrimLeftPercent} min={0} max={20} step={0.5} onChange={(v) => updateEffectiveSettings({ manualTrimLeftPercent: v })} />
+                          <DecoupledSlider label="右" value={settings.manualTrimRightPercent} min={0} max={20} step={0.5} onChange={(v) => updateEffectiveSettings({ manualTrimRightPercent: v })} />
+                          <DecoupledSlider label="上" value={settings.manualTrimTopPercent} min={0} max={20} step={0.5} onChange={(v) => updateEffectiveSettings({ manualTrimTopPercent: v })} />
+                          <DecoupledSlider label="下" value={settings.manualTrimBottomPercent} min={0} max={20} step={0.5} onChange={(v) => updateEffectiveSettings({ manualTrimBottomPercent: v })} />
                         </div>
                       </div>
                     )}
@@ -493,14 +549,65 @@ export function MobileLayout() {
                       <div>
                         <div className="section-title">画質設定</div>
                         <label className="checkbox-row" style={{ marginBottom: '16px' }}>
-                          <input type="checkbox" checked={settings.outputColorMode === 'monochrome'} onChange={(e) => updateSettings({ outputColorMode: e.target.checked ? 'monochrome' : 'original' })} style={{ transform: 'scale(1.3)' }} />
+                          <input type="checkbox" checked={settings.outputColorMode === 'monochrome'} onChange={(e) => updateEffectiveSettings({ outputColorMode: e.target.checked ? 'monochrome' : 'original' })} style={{ transform: 'scale(1.3)' }} />
                           <span style={{ fontSize: '16px', marginLeft: '4px' }}>白黒二値化</span>
                         </label>
                         {settings.outputColorMode === 'monochrome' && (
                           <div style={{ padding: '0 8px' }}>
-                            <DecoupledSlider label="二値化しきい値" value={settings.fixedThreshold} min={80} max={230} step={1} onChange={(v) => updateSettings({ fixedThreshold: v })} />
+                            <DecoupledSlider label="二値化しきい値" value={settings.fixedThreshold} min={80} max={230} step={1} onChange={(v) => updateEffectiveSettings({ fixedThreshold: v })} />
                           </div>
                         )}
+                      </div>
+                    )}
+
+                    {activeTab === 'page' as any && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                        <div>
+                          <div className="section-title">個別設定</div>
+                          <p style={{ fontSize: '13px', color: 'var(--color-text-muted)', marginBottom: '12px' }}>現在のページの設定を個別保存できます。</p>
+                          <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+                            <button type="button" className="btn-accent" onClick={() => { savePageOverride(); showToast('個別設定を保存しました'); }} style={{ flex: 1, padding: '12px', borderRadius: '12px', fontWeight: 700, border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              このページを個別設定にする
+                            </button>
+                          </div>
+                          {hasOverride && (
+                            <div style={{ fontSize: '12px', color: 'var(--color-orange)', fontWeight: 'bold', marginBottom: '8px' }}>
+                              [ 個別設定中 ]
+                            </div>
+                          )}
+                          {Object.keys(pageOverrides).length > 0 && (
+                            <div>
+                              <div style={{ fontSize: '12px', color: 'var(--color-text-dim)', marginBottom: '8px' }}>個別設定一覧:</div>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                {Object.keys(pageOverrides).map(Number).sort((a, b) => a - b).map((pageIdx) => (
+                                  <button type="button" key={pageIdx} onClick={() => { setCurrentPage(pageIdx); setActiveSheet('none'); }} style={{ padding: '6px 12px', borderRadius: '8px', background: pageIdx === currentPage ? 'rgba(249, 115, 22, 0.2)' : 'var(--color-surface)', border: pageIdx === currentPage ? '1px solid var(--color-orange)' : '1px solid var(--color-border)', color: pageIdx === currentPage ? 'var(--color-orange)' : '#fff', fontSize: '13px', fontWeight: 600 }}>
+                                    p.{pageIdx + 1}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        <div>
+                          <div className="section-title">ページ回転</div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <button type="button" onClick={() => rotatePage(currentPage, 90)} style={{ padding: '12px', borderRadius: '12px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: '#fff', fontWeight: 600 }}>
+                              現在ページを 90° 回転
+                            </button>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <button type="button" onClick={() => rotateOddPages(180)} style={{ flex: 1, padding: '12px', borderRadius: '12px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: '#fff', fontWeight: 600 }}>
+                                奇数ページ 180°
+                              </button>
+                              <button type="button" onClick={() => rotateEvenPages(180)} style={{ flex: 1, padding: '12px', borderRadius: '12px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: '#fff', fontWeight: 600 }}>
+                                偶数ページ 180°
+                              </button>
+                            </div>
+                            <button type="button" onClick={() => rotateAllPages(90)} style={{ padding: '12px', borderRadius: '12px', background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: '#fff', fontWeight: 600 }}>
+                              全ページ一括 90°
+                            </button>
+                          </div>
+                        </div>
                       </div>
                     )}
                   </div>
