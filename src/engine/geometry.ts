@@ -180,28 +180,63 @@ export function computeConstrainedCrop(
       const heightDiff = desiredHeight - currentHeight;
       top = Math.max(0, top - heightDiff / 2);
       bottom = Math.min(1, top + desiredHeight);
+      
+      if (bottom - top < desiredHeight) {
+         const clampedHeight = bottom - top;
+         const finalWidth = clampedHeight * normTargetRatio;
+         if (handleId === 'r') right = left + finalWidth;
+         else left = right - finalWidth;
+      }
     } else if (handleId === 't' || handleId === 'b') {
       const desiredWidth = currentHeight * normTargetRatio;
       const widthDiff = desiredWidth - currentWidth;
       left = Math.max(0, left - widthDiff / 2);
       right = Math.min(1, left + desiredWidth);
+      
+      if (right - left < desiredWidth) {
+         const clampedWidth = right - left;
+         const finalHeight = clampedWidth / normTargetRatio;
+         if (handleId === 'b') bottom = top + finalHeight;
+         else top = bottom - finalHeight;
+      }
     } else {
       // 四隅 (角) の場合
-      const desiredHeight = currentWidth / normTargetRatio;
-      if (handleId.includes('b')) {
-        bottom = Math.min(1, top + desiredHeight);
-      } else {
-        top = Math.max(0, bottom - desiredHeight);
-      }
+      const useWidth = Math.abs(deltaXNorm) > Math.abs(deltaYNorm);
       
-      // はみ出し補正
-      if (bottom > 1 || top < 0) {
-         if (bottom > 1) bottom = 1;
-         if (top < 0) top = 0;
-         const finalHeight = bottom - top;
-         const finalWidth = finalHeight * normTargetRatio;
-         if (handleId.includes('r')) right = Math.min(1, left + finalWidth);
-         else left = Math.max(0, right - finalWidth);
+      if (useWidth) {
+        const desiredHeight = currentWidth / normTargetRatio;
+        if (handleId.includes('b')) {
+          bottom = top + desiredHeight;
+        } else {
+          top = bottom - desiredHeight;
+        }
+        
+        // はみ出し補正
+        if (bottom > 1 || top < 0) {
+           if (bottom > 1) bottom = 1;
+           if (top < 0) top = 0;
+           const finalHeight = bottom - top;
+           const finalWidth = finalHeight * normTargetRatio;
+           if (handleId.includes('r')) right = Math.min(1, left + finalWidth);
+           else left = Math.max(0, right - finalWidth);
+        }
+      } else {
+        const desiredWidth = currentHeight * normTargetRatio;
+        if (handleId.includes('r')) {
+          right = left + desiredWidth;
+        } else {
+          left = right - desiredWidth;
+        }
+        
+        // はみ出し補正
+        if (right > 1 || left < 0) {
+           if (right > 1) right = 1;
+           if (left < 0) left = 0;
+           const finalWidth = right - left;
+           const finalHeight = finalWidth / normTargetRatio;
+           if (handleId.includes('b')) bottom = Math.min(1, top + finalHeight);
+           else top = Math.max(0, bottom - finalHeight);
+        }
       }
     }
   }
