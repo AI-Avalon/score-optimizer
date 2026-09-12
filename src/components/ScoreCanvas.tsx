@@ -278,21 +278,33 @@ export function ScoreCanvas() {
 
   // ── Handle Drag ─────────────────────────────────────────────────
   const handlePointerDown = useCallback(
-    (handleId: string, frameId: 'main' | 'left' | 'right', rect: NormalizedRect, e: React.PointerEvent) => {
+    (e: React.PointerEvent) => {
       if (touchMode === 'scroll') return;
+      
+      const target = e.target as HTMLElement;
+      const handleId = target.dataset.handleId;
+      const frameId = target.dataset.frameId as 'main' | 'left' | 'right' | undefined;
+      
+      if (!handleId || !frameId) return;
+
       e.preventDefault();
       e.stopPropagation();
       setDragging(handleId);
       setActiveFrame(frameId);
+
+      const rect = frameId === 'left' ? displayLeftCropRect 
+                 : frameId === 'right' ? displayRightCropRect 
+                 : displayCropRect;
+
       dragStartRef.current = {
         x: e.clientX,
         y: e.clientY,
         rect: { ...rect },
         splitOffset: settings.splitOffsetPercent,
       };
-      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+      target.setPointerCapture(e.pointerId);
     },
-    [settings.splitOffsetPercent],
+    [touchMode, displayLeftCropRect, displayRightCropRect, displayCropRect, settings.splitOffsetPercent],
   );
 
   const handlePointerMove = useCallback(
@@ -485,7 +497,10 @@ export function ScoreCanvas() {
              return (
               <div
                 key={`${frameId}-${h.id}`}
-                onPointerDown={(e) => handlePointerDown(h.id, frameId, rect, e)}
+                data-crop-target="handle"
+                data-handle-id={h.id}
+                data-frame-id={frameId}
+                onPointerDown={handlePointerDown}
                 style={{
                   position: 'absolute',
                   left: `${left + 10}px`,
@@ -502,8 +517,11 @@ export function ScoreCanvas() {
           return (
             <div
               key={`${frameId}-${h.id}`}
-              className="crop-resize-node"
-              onPointerDown={(e) => handlePointerDown(h.id, frameId, rect, e)}
+              className="score-crop-node"
+              data-crop-target="handle"
+              data-handle-id={h.id}
+              data-frame-id={frameId}
+              onPointerDown={handlePointerDown}
               style={{
                 left: `${h.x}px`,
                 top: `${h.y}px`,
@@ -678,7 +696,10 @@ export function ScoreCanvas() {
               
               {showSplitLine && (
                 <div
-                  onPointerDown={(e) => handlePointerDown('split-line', 'main', displayCropRect, e)}
+                  data-crop-target="handle"
+                  data-handle-id="split-line"
+                  data-frame-id="main"
+                  onPointerDown={handlePointerDown}
                   style={{
                     position: 'absolute',
                     left: `${splitLineX - 2}px`,
@@ -689,9 +710,10 @@ export function ScoreCanvas() {
                     cursor: 'ew-resize',
                     zIndex: 8,
                     opacity: 0.9,
+                    touchAction: 'none',
                   }}
                 >
-                  <div style={{ position: 'absolute', left: '-20px', top: 0, width: '44px', height: '100%' }} />
+                  <div style={{ position: 'absolute', left: '-20px', top: 0, width: '44px', height: '100%', touchAction: 'none' }} />
                 </div>
               )}
             </>

@@ -85,15 +85,15 @@ test.describe('Score Optimizer 2.0 Workstation Tests', () => {
     await page.waitForTimeout(1000); // Wait for render
 
     // In single_fit mode (or whatever mode), verify the handles exist.
-    // The class name MUST NOT be 'crop-handle' or anything suspicious. We expect 'crop-resize-node'.
+    // The class name MUST NOT be 'crop-handle' or anything suspicious. We expect 'score-crop-node'.
     // Wait for at least one node to appear
-    await expect(page.locator('.crop-resize-node').first()).toBeVisible();
+    await expect(page.locator('.score-crop-node').first()).toBeVisible();
     
-    const count = await page.locator('.crop-resize-node').count();
+    const count = await page.locator('.score-crop-node').count();
     expect(count).toBeGreaterThanOrEqual(8);
 
     // Verify that the handles are visible and pointer-events: auto
-    const firstHandle = page.locator('.crop-resize-node').first();
+    const firstHandle = page.locator('.score-crop-node').first();
     const displayStyle = await firstHandle.evaluate((node) => {
       const style = window.getComputedStyle(node);
       return { opacity: style.opacity, pointerEvents: style.pointerEvents };
@@ -194,5 +194,70 @@ test.describe('Score Optimizer 2.0 Workstation Tests', () => {
     
     await expect(singleOpt).toHaveClass(/active/);
     await expect(spreadOpt).not.toHaveClass(/active/);
+  });
+
+  test('PC: should successfully drag a crop handle and update store crop values', async ({ page }) => {
+    // Set PC viewport
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto('http://localhost:5173');
+    
+    // Load PDF
+    const fileChooserPromise = page.waitForEvent('filechooser');
+    await page.locator('button:has-text("PDFファイルを開く"), button:has-text("PDF読込")').first().click();
+    const fileChooser = await fileChooserPromise;
+    await fileChooser.setFiles(path.join(process.cwd(), 'tests', 'fixtures', '見開きテスト.pdf'));
+
+    await expect(page.locator('canvas').first()).toBeVisible({ timeout: 15000 });
+    await page.waitForTimeout(1000); // Wait for initial render
+
+    // Force single_fit and disable aspect ratio lock to isolate the drag math
+    await page.evaluate(() => {
+      // @ts-ignore
+      window.useScoreStore.getState().setIsAspectRatioLocked(false);
+      // @ts-ignore
+      window.useScoreStore.getState().updateSettings({ pageProcessingMode: 'single_fit' });
+      // @ts-ignore
+      window.useScoreStore.getState().setTouchMode('crop');
+    });
+    await page.waitForTimeout(500);
+
+    const initialCrop = await page.evaluate(() => {
+      // @ts-ignore
+      return window.useScoreStore.getState().cropRect;
+    });
+
+    // Locate the 'br' handle using the newly added safe class and data attribute
+    const brHandle = page.locator('.score-crop-node[data-handle-id="br"]').first();
+    await expect(brHandle).toBeVisible();
+
+    const handleBox = await brHandle.boundingBox();
+    expect(handleBox).not.toBeNull();
+    if (!handleBox) return; // For TS
+
+    // Calculate center of the handle
+    const startX = handleBox.x + handleBox.width / 2;
+    const startY = handleBox.y + handleBox.height / 2;
+
+    // Drag inward by 50px
+    const dragDistanceX = -50;
+    const dragDistanceY = -50;
+
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    // Move in steps to simulate a real user dragging
+    await page.mouse.move(startX + dragDistanceX / 2, startY + dragDistanceY / 2, { steps: 5 });
+    await page.mouse.move(startX + dragDistanceX, startY + dragDistanceY, { steps: 5 });
+    await page.mouse.up();
+
+    await page.waitForTimeout(100); // Allow store update
+
+    const updatedCrop = await page.evaluate(() => {
+      // @ts-ignore
+      return window.useScoreStore.getState().cropRect;
+    });
+
+    // Dragging 'br' inwards (up and left) should decrease both width and height
+    expect(updatedCrop.width).toBeLessThan(initialCrop.width);
+    expect(updatedCrop.height).toBeLessThan(initialCrop.height);
   });
 });

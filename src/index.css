@@ -270,7 +270,7 @@ input[type='number']:focus {
 
 /* ── Crop overlay ─────────────────────────────────────────────────── */
 
-.crop-resize-node {
+.score-crop-node {
   position: absolute;
   width: 16px;
   height: 16px;
@@ -282,7 +282,7 @@ input[type='number']:focus {
   pointer-events: auto;
   touch-action: none; /* Prevent browser scrolling while dragging handles */
 }
-.crop-resize-node::before {
+.score-crop-node::before {
   content: '';
   position: absolute;
   inset: -16px;
