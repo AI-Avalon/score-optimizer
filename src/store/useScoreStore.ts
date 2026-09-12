@@ -110,6 +110,7 @@ interface ScoreState {
   setCropRect: (rect: NormalizedRect) => void;
   setLeftCropRect: (rect: NormalizedRect) => void;
   setRightCropRect: (rect: NormalizedRect) => void;
+  commitCropRect: (newRect: NormalizedRect) => void;
   detectBlackMargins: () => Promise<void>;
   savePageOverride: () => void;
   removePageOverride: () => void;
@@ -368,12 +369,35 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
 
   nudgeCropRect: (dx: number, dy: number) => {
     const state = get();
-    // Decide which crop rect to update based on settings or just update cropRect.
-    // Assuming single main frame for mobile.
     let newRect = { ...state.cropRect };
     newRect.x = Math.max(0, Math.min(1 - newRect.width, newRect.x + dx));
     newRect.y = Math.max(0, Math.min(1 - newRect.height, newRect.y + dy));
-    set({ cropRect: newRect, leftCropRect: newRect, rightCropRect: newRect });
+    get().commitCropRect(newRect);
+  },
+
+  commitCropRect: (newRect: NormalizedRect) => {
+    const state = get();
+    const effective = get().getEffectiveSettings(state.currentPage);
+    const baseRect = effective.autoCropEnabled && state.detectedCropRect 
+      ? state.detectedCropRect 
+      : { x: 0, y: 0, width: 1, height: 1 };
+    
+    if (baseRect.width > 0 && baseRect.height > 0) {
+      const trimLeftPercent = ((newRect.x - baseRect.x) / baseRect.width) * 100;
+      const trimTopPercent = ((newRect.y - baseRect.y) / baseRect.height) * 100;
+      const trimRightPercent = ((baseRect.x + baseRect.width - (newRect.x + newRect.width)) / baseRect.width) * 100;
+      const trimBottomPercent = ((baseRect.y + baseRect.height - (newRect.y + newRect.height)) / baseRect.height) * 100;
+      
+      // updateSettings will automatically recompute and update cropRect, leftCropRect, rightCropRect
+      get().updateSettings({
+        manualTrimLeftPercent: Math.max(0, trimLeftPercent),
+        manualTrimTopPercent: Math.max(0, trimTopPercent),
+        manualTrimRightPercent: Math.max(0, trimRightPercent),
+        manualTrimBottomPercent: Math.max(0, trimBottomPercent),
+      });
+    } else {
+      set({ cropRect: newRect, leftCropRect: newRect, rightCropRect: newRect });
+    }
   },
 
   // ── 黒枠自動検出 Worker (otsu-worker-tester skill) ──────────────

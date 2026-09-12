@@ -129,3 +129,93 @@ export function getSplitLineNormalizedX(
   const rawX = cropRect.x + halfWidth + cropRect.width * offsetFraction;
   return Math.max(cropRect.x, Math.min(cropRect.x + cropRect.width, rawX));
 }
+
+// ─── Solver for Crop Coordinates ──────────────────────────────────────
+
+/**
+ * クロップ幾何拘束ソルバー (Geometry Solver)
+ */
+export function computeConstrainedCrop(
+  initialRect: NormalizedRect,
+  handleId: string,
+  deltaXNorm: number,
+  deltaYNorm: number,
+  aspectRatioLock: boolean,
+  targetRatio: number, // width / height
+  pageAspect: number   // 原本ページの width / height
+): NormalizedRect {
+  let top = initialRect.y;
+  let bottom = initialRect.y + initialRect.height;
+  let left = initialRect.x;
+  let right = initialRect.x + initialRect.width;
+
+  if (handleId === 'c') {
+    const width = right - left;
+    const height = bottom - top;
+    let newLeft = Math.max(0, Math.min(1 - width, left + deltaXNorm));
+    let newTop = Math.max(0, Math.min(1 - height, top + deltaYNorm));
+    return {
+      x: newLeft,
+      y: newTop,
+      width: width,
+      height: height,
+    };
+  }
+
+  // ハンドルごとの移動
+  if (handleId.includes('r')) right = Math.min(1.0, Math.max(left + 0.02, right + deltaXNorm));
+  if (handleId.includes('l')) left = Math.max(0.0, Math.min(right - 0.02, left + deltaXNorm));
+  if (handleId.includes('b')) bottom = Math.min(1.0, Math.max(top + 0.02, bottom + deltaYNorm));
+  if (handleId.includes('t')) top = Math.max(0.0, Math.min(bottom - 0.02, top + deltaYNorm));
+
+  // アスペクト比拘束の計算
+  if (aspectRatioLock && targetRatio > 0 && pageAspect > 0) {
+    // 画面正規化座標系での目標比率
+    const normTargetRatio = targetRatio / pageAspect;
+    const currentWidth = right - left;
+    const currentHeight = bottom - top;
+
+    if (handleId === 'r' || handleId === 'l') {
+      const desiredHeight = currentWidth / normTargetRatio;
+      const heightDiff = desiredHeight - currentHeight;
+      top = Math.max(0, top - heightDiff / 2);
+      bottom = Math.min(1, top + desiredHeight);
+    } else if (handleId === 't' || handleId === 'b') {
+      const desiredWidth = currentHeight * normTargetRatio;
+      const widthDiff = desiredWidth - currentWidth;
+      left = Math.max(0, left - widthDiff / 2);
+      right = Math.min(1, left + desiredWidth);
+    } else {
+      // 四隅 (角) の場合
+      const desiredHeight = currentWidth / normTargetRatio;
+      if (handleId.includes('b')) {
+        bottom = Math.min(1, top + desiredHeight);
+      } else {
+        top = Math.max(0, bottom - desiredHeight);
+      }
+      
+      // はみ出し補正
+      if (bottom > 1 || top < 0) {
+         if (bottom > 1) bottom = 1;
+         if (top < 0) top = 0;
+         const finalHeight = bottom - top;
+         const finalWidth = finalHeight * normTargetRatio;
+         if (handleId.includes('r')) right = Math.min(1, left + finalWidth);
+         else left = Math.max(0, right - finalWidth);
+      }
+    }
+  }
+
+  // 最終クランプ
+  left = Math.max(0, Math.min(1, left));
+  right = Math.max(0, Math.min(1, right));
+  top = Math.max(0, Math.min(1, top));
+  bottom = Math.max(0, Math.min(1, bottom));
+
+  return { 
+    x: left, 
+    y: top, 
+    width: right - left, 
+    height: bottom - top 
+  };
+}

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { useScoreStore } from '../store/useScoreStore';
-import { getSplitLineNormalizedX } from '../engine/geometry';
+import { getSplitLineNormalizedX, computeConstrainedCrop } from '../engine/geometry';
 import type { NormalizedRect } from '../types';
 import { Loader2, FileText } from 'lucide-react';
 
@@ -383,62 +383,29 @@ export function ScoreCanvas() {
           }
         }
       } else {
-        // Edge/Corner Drag
-        if (dragging.includes('l')) {
-          const newX = Math.max(0, Math.min(startRect.x + startRect.width - 0.02, startRect.x + normDx));
-          newRect = { ...newRect, x: newX, width: startRect.x + startRect.width - newX };
-        }
-        if (dragging.includes('r')) {
-          const newW = Math.max(0.02, Math.min(1 - startRect.x, startRect.width + normDx));
-          newRect = { ...newRect, width: newW };
-        }
-        if (dragging.includes('t')) {
-          const newY = Math.max(0, Math.min(startRect.y + startRect.height - 0.02, startRect.y + normDy));
-          newRect = { ...newRect, y: newY, height: startRect.y + startRect.height - newY };
-        }
-        if (dragging.includes('b')) {
-          const newH = Math.max(0.02, Math.min(1 - startRect.y, startRect.height + normDy));
-          newRect = { ...newRect, height: newH };
-        }
-
-        // ── Aspect Ratio Lock ──
-        if (isAspectRatioLocked && selectedPaper !== 'custom') {
-          const paperConfig = useScoreStore.getState().getPaperConfig();
-          // Target ratio depends on if it's spread_split WITHOUT independent frames
-          const targetRatio = settings.pageProcessingMode === 'spread_split' && !settings.independentSplitFrames
-            ? (paperConfig.widthPt * 2) / paperConfig.heightPt
-            : paperConfig.widthPt / paperConfig.heightPt;
+        // ── Crop Geometry Constraint Solver ──
+        const paperConfig = useScoreStore.getState().getPaperConfig();
+        const targetRatio = settings.pageProcessingMode === 'spread_split' && !settings.independentSplitFrames
+          ? (paperConfig.widthPt * 2) / paperConfig.heightPt
+          : paperConfig.widthPt / paperConfig.heightPt;
           
-          const pxWidth = newRect.width * canvasSize.width;
-          const pxHeight = newRect.height * canvasSize.height;
-
-          if (dragging === 'l' || dragging === 'r') {
-            const reqPxHeight = pxWidth / targetRatio;
-            newRect.height = reqPxHeight / canvasSize.height;
-            const yOffset = (startRect.height - newRect.height) / 2;
-            newRect.y = startRect.y + yOffset;
-          } else if (dragging === 't' || dragging === 'b') {
-            const reqPxWidth = pxHeight * targetRatio;
-            newRect.width = reqPxWidth / canvasSize.width;
-            const xOffset = (startRect.width - newRect.width) / 2;
-            newRect.x = startRect.x + xOffset;
-          } else {
-            if (Math.abs(dx) > Math.abs(dy)) {
-              const reqPxHeight = pxWidth / targetRatio;
-              newRect.height = reqPxHeight / canvasSize.height;
-              if (dragging.includes('t')) newRect.y = startRect.y + startRect.height - newRect.height;
-            } else {
-              const reqPxWidth = pxHeight * targetRatio;
-              newRect.width = reqPxWidth / canvasSize.width;
-              if (dragging.includes('l')) newRect.x = startRect.x + startRect.width - newRect.width;
-            }
-          }
-
-          newRect.x = Math.max(0, Math.min(1 - newRect.width, newRect.x));
-          newRect.y = Math.max(0, Math.min(1 - newRect.height, newRect.y));
-          newRect.width = Math.min(1, Math.max(0.02, newRect.width));
-          newRect.height = Math.min(1, Math.max(0.02, newRect.height));
+        let pageAspect = 1.0;
+        if (pageObjRef.current) {
+          try {
+            const viewport = pageObjRef.current.getViewport({ scale: 1.0, rotation: pages[currentPage]?.rotation || 0 });
+            if (viewport.height > 0) pageAspect = viewport.width / viewport.height;
+          } catch(e) {}
         }
+        
+        newRect = computeConstrainedCrop(
+          startRect,
+          dragging,
+          normDx,
+          normDy,
+          isAspectRatioLocked && selectedPaper !== 'custom',
+          targetRatio,
+          pageAspect
+        );
       }
 
       if (activeFrame === 'left') setLocalLeftCropRect(newRect);
@@ -450,10 +417,11 @@ export function ScoreCanvas() {
 
   const handlePointerUp = useCallback(() => {
     // Commit local state to Zustand store
-    if (localCropRect) setCropRect(localCropRect);
-    if (localLeftCropRect) setLeftCropRect(localLeftCropRect);
-    if (localRightCropRect) setRightCropRect(localRightCropRect);
-    if (localSplitOffset !== null) useScoreStore.getState().setSplitOffsetPercent(localSplitOffset);
+    const store = useScoreStore.getState();
+    if (localCropRect) store.commitCropRect(localCropRect);
+    if (localLeftCropRect) store.setLeftCropRect(localLeftCropRect);
+    if (localRightCropRect) store.setRightCropRect(localRightCropRect);
+    if (localSplitOffset !== null) store.setSplitOffsetPercent(localSplitOffset);
 
     // Reset local state
     setLocalCropRect(null);
