@@ -174,6 +174,8 @@ export function computeConstrainedCrop(
     const normTargetRatio = targetRatio / pageAspect;
     const currentWidth = right - left;
     const currentHeight = bottom - top;
+    
+    console.log('[GEOM DEBUG]', { handleId, deltaXNorm, deltaYNorm, targetRatio, pageAspect, normTargetRatio, currentWidth, currentHeight });
 
     if (handleId === 'r' || handleId === 'l') {
       const desiredHeight = currentWidth / normTargetRatio;

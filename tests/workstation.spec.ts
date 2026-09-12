@@ -331,11 +331,13 @@ test.describe('Score Optimizer 2.0 Workstation Tests', () => {
        // @ts-ignore
        const state = window.useScoreStore.getState();
        const pageProxy = await state.pdfDoc.getPage(1);
-       const vp = pageProxy.getViewport({ scale: 1.0 });
+       const rotation = state.pages[0]?.rotation || 0;
+       const vp = pageProxy.getViewport({ scale: 1.0, rotation });
        return vp.width / vp.height;
     });
 
     const cropRatio = (updatedCrop.width * actualPageAspect) / updatedCrop.height;
+
     // Assert the aspect ratio matches the target ratio within a reasonable margin of error.
     // The previous 2% margin was too strict because floating point rounding and viewport
     // sizing can cause slightly larger discrepancies in this synthetic environment.
