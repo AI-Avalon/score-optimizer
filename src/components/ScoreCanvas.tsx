@@ -279,9 +279,10 @@ export function ScoreCanvas() {
   // ── Handle Drag ─────────────────────────────────────────────────
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
-      if (touchMode === 'scroll') return;
+      const currentTouchMode = useScoreStore.getState().touchMode;
+      if (currentTouchMode === 'scroll') return;
       
-      const target = e.target as HTMLElement;
+      const target = e.currentTarget as HTMLElement;
       const handleId = target.dataset.handleId;
       const frameId = target.dataset.frameId as 'main' | 'left' | 'right' | undefined;
       
@@ -302,9 +303,16 @@ export function ScoreCanvas() {
         rect: { ...rect },
         splitOffset: settings.splitOffsetPercent,
       };
-      target.setPointerCapture(e.pointerId);
+      
+      try {
+        if (target.setPointerCapture) {
+          target.setPointerCapture(e.pointerId);
+        }
+      } catch (err) {
+        console.warn('setPointerCapture failed:', err);
+      }
     },
-    [touchMode, displayLeftCropRect, displayRightCropRect, displayCropRect, settings.splitOffsetPercent],
+    [displayLeftCropRect, displayRightCropRect, displayCropRect, settings.splitOffsetPercent],
   );
 
   const handlePointerMove = useCallback(
@@ -509,7 +517,8 @@ export function ScoreCanvas() {
                   height: `${Math.max(0, h.h!)}px`,
                   cursor: h.cursor,
                   zIndex: isActive ? 10 : 9,
-                  touchAction: 'none'
+                  touchAction: 'none',
+                  pointerEvents: isDesktop ? 'auto' : (touchMode === 'scroll' ? 'none' : 'auto'),
                 }}
               />
              );
