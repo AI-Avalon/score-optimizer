@@ -861,3 +861,9 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
     });
   },
 }));
+
+// For Playwright E2E tests
+if (typeof window !== 'undefined') {
+  // @ts-ignore
+  window.useScoreStore = useScoreStore;
+}

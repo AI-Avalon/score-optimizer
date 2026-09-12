@@ -71,11 +71,11 @@ export function MobileScoreViewer() {
         const containerWidth = Math.max(0, container.clientWidth - 32); // margin
         const containerHeight = Math.max(0, container.clientHeight - 32);
 
-        const unscaledViewport = page.getViewport({ scale: 1.0 });
+        const unscaledViewport = page.getViewport({ scale: 1.0, rotation: pageEntry.rotation });
         const fitScale = Math.min(containerWidth / unscaledViewport.width, containerHeight / unscaledViewport.height);
         
         const scale = zoomMode === 'fit' ? fitScale : fitScale * zoom;
-        const viewport = page.getViewport({ scale: scale * dpr });
+        const viewport = page.getViewport({ scale: scale * dpr, rotation: pageEntry.rotation });
 
         canvas.width = viewport.width;
         canvas.height = viewport.height;

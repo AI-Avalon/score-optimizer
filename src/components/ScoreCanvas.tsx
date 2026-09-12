@@ -134,9 +134,9 @@ export function ScoreCanvas() {
         const isMobile = window.innerWidth < 768;
         const dpr = isMobile ? Math.min(window.devicePixelRatio || 1, 1.25) : Math.min(window.devicePixelRatio || 1, 2.0);
 
-        const unscaledViewport = page.getViewport({ scale: 1.0 });
+        const unscaledViewport = page.getViewport({ scale: 1.0, rotation: pageEntry.rotation });
         const fitScale = Math.min(containerWidth / unscaledViewport.width, containerHeight / unscaledViewport.height);
-        const viewport = page.getViewport({ scale: fitScale * dpr });
+        const viewport = page.getViewport({ scale: fitScale * dpr, rotation: pageEntry.rotation });
 
         // ダブルバッファリング：オフスクリーンキャンバスに描画
         const offscreen = document.createElement('canvas');
@@ -446,6 +446,7 @@ export function ScoreCanvas() {
     const width = rect.width * canvasSize.width;
     const height = rect.height * canvasSize.height;
     const isActive = activeFrame === frameId;
+    const isDesktop = window.innerWidth >= 768;
 
     const handles = [
       { id: 'c',  x: left + width/2, y: top + height/2, cursor: 'move', w: width - 20, h: height - 20 },
@@ -472,7 +473,7 @@ export function ScoreCanvas() {
             borderRadius: '1px',
             pointerEvents: 'none',
             zIndex: isActive ? 6 : 5,
-            opacity: touchMode === 'scroll' ? 0.3 : (dragging === 'c' && isActive ? 0.5 : 1),
+            opacity: isDesktop ? (dragging === 'c' && isActive ? 0.5 : 1) : (touchMode === 'scroll' ? 0.3 : (dragging === 'c' && isActive ? 0.5 : 1)),
             backgroundColor: dragging === 'c' && isActive ? `${color}1A` : 'transparent',
             transition: 'opacity 0.2s ease',
           }}
@@ -501,7 +502,7 @@ export function ScoreCanvas() {
           return (
             <div
               key={`${frameId}-${h.id}`}
-              className="crop-handle"
+              className="crop-resize-node"
               onPointerDown={(e) => handlePointerDown(h.id, frameId, rect, e)}
               style={{
                 left: `${h.x}px`,
@@ -509,8 +510,8 @@ export function ScoreCanvas() {
                 cursor: h.cursor,
                 zIndex: isActive ? 11 : 10,
                 borderColor: color,
-                opacity: touchMode === 'scroll' ? 0 : 1,
-                pointerEvents: touchMode === 'scroll' ? 'none' : 'auto',
+                opacity: isDesktop ? 1 : (touchMode === 'scroll' ? 0 : 1),
+                pointerEvents: isDesktop ? 'auto' : (touchMode === 'scroll' ? 'none' : 'auto'),
                 transition: 'opacity 0.2s ease',
               }}
             />

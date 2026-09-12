@@ -270,20 +270,19 @@ input[type='number']:focus {
 
 /* ── Crop overlay ─────────────────────────────────────────────────── */
 
-.crop-handle {
+.crop-resize-node {
   position: absolute;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: var(--color-green);
-  border: 2px solid white;
+  width: 16px;
+  height: 16px;
   transform: translate(-50%, -50%);
+  background: var(--color-panel);
+  border: 2px solid var(--color-accent);
+  border-radius: 50%;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.3);
   pointer-events: auto;
-  z-index: 10;
-  /* 44px タッチ領域確保 (Apple HIG) */
-  touch-action: none;
+  touch-action: none; /* Prevent browser scrolling while dragging handles */
 }
-.crop-handle::before {
+.crop-resize-node::before {
   content: '';
   position: absolute;
   inset: -16px;
