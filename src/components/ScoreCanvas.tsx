@@ -40,6 +40,8 @@ export function ScoreCanvas() {
   const selectedPaper = useScoreStore((s) => s.selectedPaper);
   const isDetecting = useScoreStore((s) => s.isDetecting);
   const touchMode = useScoreStore((s) => s.touchMode);
+  const zoom = useScoreStore((s) => s.zoom);
+  const zoomMode = useScoreStore((s) => s.zoomMode);
 
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
   const [dragging, setDragging] = useState<string | null>(null);
@@ -136,7 +138,8 @@ export function ScoreCanvas() {
 
         const unscaledViewport = page.getViewport({ scale: 1.0, rotation: pageEntry.rotation });
         const fitScale = Math.min(containerWidth / unscaledViewport.width, containerHeight / unscaledViewport.height);
-        const viewport = page.getViewport({ scale: fitScale * dpr, rotation: pageEntry.rotation });
+        const scale = zoomMode === 'fit' ? fitScale : fitScale * zoom;
+        const viewport = page.getViewport({ scale: scale * dpr, rotation: pageEntry.rotation });
 
         // ダブルバッファリング：オフスクリーンキャンバスに描画
         const offscreen = document.createElement('canvas');
@@ -222,7 +225,7 @@ export function ScoreCanvas() {
         pageObjRef.current = null;
       }
     };
-  }, [pdfDoc, currentPage, pages, settingsVersion]);
+  }, [pdfDoc, currentPage, pages, settingsVersion, zoom, zoomMode]);
 
   // ── Keyboard Nudge Controls ─────────────────────────────────────
   useEffect(() => {
@@ -282,9 +285,11 @@ export function ScoreCanvas() {
       const currentTouchMode = useScoreStore.getState().touchMode;
       if (currentTouchMode === 'scroll') return;
       
-      const target = e.currentTarget as HTMLElement;
-      const handleId = target.dataset.handleId;
-      const frameId = target.dataset.frameId as 'main' | 'left' | 'right' | undefined;
+      const handle = (e.target as Element).closest('[data-handle-id]') as HTMLElement | null;
+      if (!handle) return;
+      
+      const handleId = handle.dataset.handleId;
+      const frameId = handle.dataset.frameId as 'main' | 'left' | 'right' | undefined;
       
       if (!handleId || !frameId) return;
 
@@ -305,6 +310,7 @@ export function ScoreCanvas() {
       };
       
       try {
+        const target = e.currentTarget as HTMLElement;
         if (target.setPointerCapture) {
           target.setPointerCapture(e.pointerId);
         }

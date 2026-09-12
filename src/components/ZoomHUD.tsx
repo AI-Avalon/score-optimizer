@@ -38,6 +38,7 @@ export function ZoomHUD() {
         className="btn-icon btn"
         onClick={handleZoomOut}
         aria-label="Zoom out"
+        data-testid="zoom-out"
         style={{ borderRadius: '50%', padding: '4px', minWidth: '28px', minHeight: '28px', border: 'none', background: 'transparent' }}
       >
         <Minus size={14} />
@@ -81,6 +82,7 @@ export function ZoomHUD() {
         className="btn-icon btn"
         onClick={handleZoomIn}
         aria-label="Zoom in"
+        data-testid="zoom-in"
         style={{ borderRadius: '50%', padding: '4px', minWidth: '28px', minHeight: '28px', border: 'none', background: 'transparent' }}
       >
         <Plus size={14} />

@@ -127,7 +127,7 @@ test.describe('Score Optimizer 2.0 Workstation Tests', () => {
     const fileChooserPromise = page.waitForEvent('filechooser');
     await page.locator('button:has-text("PDFファイルを開く"), button:has-text("PDF読込")').first().click();
     const fileChooser = await fileChooserPromise;
-    await fileChooser.setFiles(path.join(process.cwd(), 'tests', 'fixtures', '見開きテスト.pdf'));
+    await fileChooser.setFiles(path.join(process.cwd(), 'tests', 'fixtures', 'SKM_550i26091214160_2.pdf'));
 
     const canvasLocator = page.locator('canvas').first();
     await expect(canvasLocator).toBeVisible({ timeout: 15000 });
@@ -147,6 +147,14 @@ test.describe('Score Optimizer 2.0 Workstation Tests', () => {
       const size = await canvasLocator.evaluate((node: HTMLCanvasElement) => ({ width: node.width, height: node.height }));
       return size.width / size.height;
     }, { timeout: 10000, message: `Waiting for aspect ratio to change from ${initialAspect}` }).not.toBeCloseTo(initialAspect, 1);
+    
+    // Validate Store Rotation
+    const storeRotation = await page.evaluate(() => {
+      // @ts-ignore
+      const state = window.useScoreStore.getState();
+      return state.pages[state.currentPage].rotation;
+    });
+    expect(storeRotation).toBe(90);
   });
 
   test('PC: Page Override sizes are correctly preserved when navigating', async ({ page }) => {
@@ -156,7 +164,7 @@ test.describe('Score Optimizer 2.0 Workstation Tests', () => {
     const fileChooserPromise = page.waitForEvent('filechooser');
     await page.locator('button:has-text("PDFファイルを開く"), button:has-text("PDF読込")').first().click();
     const fileChooser = await fileChooserPromise;
-    await fileChooser.setFiles(path.join(process.cwd(), 'tests', 'fixtures', '見開きテスト.pdf'));
+    await fileChooser.setFiles(path.join(process.cwd(), 'tests', 'fixtures', 'SKM_550i26091214160_2.pdf'));
     await expect(page.locator('canvas').first()).toBeVisible({ timeout: 15000 });
     await page.waitForTimeout(1000);
     
@@ -205,7 +213,7 @@ test.describe('Score Optimizer 2.0 Workstation Tests', () => {
     const fileChooserPromise = page.waitForEvent('filechooser');
     await page.locator('button:has-text("PDFファイルを開く"), button:has-text("PDF読込")').first().click();
     const fileChooser = await fileChooserPromise;
-    await fileChooser.setFiles(path.join(process.cwd(), 'tests', 'fixtures', '見開きテスト.pdf'));
+    await fileChooser.setFiles(path.join(process.cwd(), 'tests', 'fixtures', 'SKM_550i26091214160_2.pdf'));
 
     await expect(page.locator('canvas').first()).toBeVisible({ timeout: 15000 });
     await page.waitForTimeout(1000); // Wait for initial render
@@ -259,5 +267,36 @@ test.describe('Score Optimizer 2.0 Workstation Tests', () => {
     // Dragging 'br' inwards (up and left) should decrease both width and height
     expect(updatedCrop.width).toBeLessThan(initialCrop.width);
     expect(updatedCrop.height).toBeLessThan(initialCrop.height);
+  });
+  
+  test('PC: Zoom should enlarge the canvas internal resolution correctly', async ({ page }) => {
+    // Set PC viewport
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto('http://localhost:5173');
+    
+    // Load PDF
+    const fileChooserPromise = page.waitForEvent('filechooser');
+    await page.locator('button:has-text("PDFファイルを開く"), button:has-text("PDF読込")').first().click();
+    const fileChooser = await fileChooserPromise;
+    await fileChooser.setFiles(path.join(process.cwd(), 'tests', 'fixtures', 'SKM_550i26091214160_2.pdf'));
+
+    const canvasLocator = page.locator('canvas').first();
+    await expect(canvasLocator).toBeVisible({ timeout: 15000 });
+    await page.waitForTimeout(1500); // Wait for render
+
+    const initialSize = await canvasLocator.evaluate((node: HTMLCanvasElement) => ({ width: node.width, height: node.height }));
+    
+    // Click zoom in button
+    const zoomInBtn = page.locator('[data-testid="zoom-in"]');
+    await expect(zoomInBtn).toBeVisible();
+    await zoomInBtn.click();
+    
+    await page.waitForTimeout(1500); // Wait for render
+    
+    const zoomedSize = await canvasLocator.evaluate((node: HTMLCanvasElement) => ({ width: node.width, height: node.height }));
+    
+    // The canvas resolution should be larger after zooming in
+    expect(zoomedSize.width).toBeGreaterThan(initialSize.width);
+    expect(zoomedSize.height).toBeGreaterThan(initialSize.height);
   });
 });
