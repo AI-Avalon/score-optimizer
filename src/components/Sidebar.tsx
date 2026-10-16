@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useScoreStore } from '../store/useScoreStore';
-import { Sparkles, Save, Trash2, RotateCw, Copy, RefreshCcw, Lock, Unlock } from 'lucide-react';
+import { Sparkles, Save, Trash2, RotateCw, Copy, RefreshCcw, Lock, Unlock, ArrowUp, ArrowDown, ArrowLeft, ArrowRight } from 'lucide-react';
 import type { PageProcessingMode, PageOrder, OutputColorMode, FrontMatterMode, RotationDeg, PaperPresetKey } from '../types';
 import { PAPER_PRESETS } from '../types';
 
@@ -11,7 +11,7 @@ import { PAPER_PRESETS } from '../types';
  * 1. ページ処理モード (spread_split / single_fit)
  * 2. 出力色 (monochrome / original)
  * 3. 自動クロップ (黒枠検出、大津二値化)
- * 4. 手動トリム (上下左右 %)
+ * 4. 手動トリム (上下左右 % + 微動Nudge)
  * 5. 見開き設定 (分割位置、ページ順)
  * 6. ページ構成 (本文開始ページ、本文前)
  * 7. ページ個別設定
@@ -78,6 +78,7 @@ export function Sidebar() {
   const setIsAspectRatioLocked = useScoreStore((s) => s.setIsAspectRatioLocked);
   const exportDpi = useScoreStore((s) => s.exportDpi);
   const setExportDpi = useScoreStore((s) => s.setExportDpi);
+  const nudgeCropRect = useScoreStore((s) => s.nudgeCropRect);
   
   const globalSettings = useScoreStore((s) => s.settings);
   const hasOverride = currentPage in pageOverrides;
@@ -192,6 +193,7 @@ export function Sidebar() {
             <span className="setting-label" style={{ fontSize: '11px' }}>余白 (mm)</span>
             <input
               type="number"
+              data-testid="margin-input"
               value={marginMm}
               onChange={(e) => setMarginMm(Number(e.target.value) || 0)}
               style={{ width: '100%' }}
@@ -223,6 +225,7 @@ export function Sidebar() {
         <div>
           <span className="setting-label" style={{ display: 'block', marginBottom: '4px' }}>出力DPI</span>
           <select
+            data-testid="dpi-select"
             value={exportDpi}
             onChange={(e) => setExportDpi(Number(e.target.value))}
             style={{
@@ -237,6 +240,7 @@ export function Sidebar() {
               cursor: 'pointer',
             }}
           >
+            <option value={72}>72 DPI (プレビュー)</option>
             <option value={150}>150 DPI (軽量)</option>
             <option value={200}>200 DPI</option>
             <option value={300}>300 DPI (標準印刷)</option>
@@ -335,13 +339,31 @@ export function Sidebar() {
         <DecoupledSlider label="固定二値化しきい値" value={settings.fixedThreshold} min={80} max={230} step={1} onChange={(v) => updateSettings({ fixedThreshold: v })} />
       </div>
 
-      {/* ── 4. 手動トリム ────────────────────────────────────── */}
+      {/* ── 4. 手動トリム & 微動 (Nudge) ───────────────────────── */}
       <div className="settings-section">
         <div className="section-title">手動トリム (%)</div>
         <DecoupledSlider label="左" value={settings.manualTrimLeftPercent} min={0} max={20} step={0.5} onChange={(v) => updateSettings({ manualTrimLeftPercent: v })} />
         <DecoupledSlider label="右" value={settings.manualTrimRightPercent} min={0} max={20} step={0.5} onChange={(v) => updateSettings({ manualTrimRightPercent: v })} />
         <DecoupledSlider label="上" value={settings.manualTrimTopPercent} min={0} max={20} step={0.5} onChange={(v) => updateSettings({ manualTrimTopPercent: v })} />
         <DecoupledSlider label="下" value={settings.manualTrimBottomPercent} min={0} max={20} step={0.5} onChange={(v) => updateSettings({ manualTrimBottomPercent: v })} />
+
+        <div style={{ marginTop: '10px' }}>
+          <span className="setting-label" style={{ display: 'block', marginBottom: '6px', fontSize: '11px' }}>枠微動 (Nudge 0.5%)</span>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px' }}>
+            <button type="button" className="btn btn-sm" data-testid="nudge-up" aria-label="上へ微動" onClick={() => nudgeCropRect(0, -0.005)}>
+              <ArrowUp size={14} />
+            </button>
+            <button type="button" className="btn btn-sm" data-testid="nudge-down" aria-label="下へ微動" onClick={() => nudgeCropRect(0, 0.005)}>
+              <ArrowDown size={14} />
+            </button>
+            <button type="button" className="btn btn-sm" data-testid="nudge-left" aria-label="左へ微動" onClick={() => nudgeCropRect(-0.005, 0)}>
+              <ArrowLeft size={14} />
+            </button>
+            <button type="button" className="btn btn-sm" data-testid="nudge-right" aria-label="右へ微動" onClick={() => nudgeCropRect(0.005, 0)}>
+              <ArrowRight size={14} />
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* ── 5. 見開き設定 (spread_split のみ) ────────────────── */}
@@ -441,18 +463,19 @@ export function Sidebar() {
           現在のページの設定を個別保存できます。
         </p>
         <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
-          <button type="button" className="btn btn-sm" onClick={savePageOverride} style={{ flex: 1 }}>
+          <button type="button" className="btn btn-sm" data-testid="save-page-override" onClick={savePageOverride} style={{ flex: 1 }}>
             <Save size={12} />
             このページを保存
           </button>
           <button type="button"
             className="btn btn-sm"
+            data-testid="remove-page-override"
             onClick={removePageOverride}
             disabled={!hasOverride}
             style={{ flex: 1, opacity: hasOverride ? 1 : 0.5 }}
           >
             <Trash2 size={12} />
-            個別設定を解除
+            全体設定に戻す
           </button>
         </div>
 

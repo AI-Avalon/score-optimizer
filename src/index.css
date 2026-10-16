@@ -137,7 +137,7 @@ input[type='range']::-moz-range-thumb {
 .btn-accent {
   background: var(--color-accent);
   border-color: var(--color-accent);
-  color: #0d0f12;
+  color: #ffffff;
 }
 .btn-accent:hover {
   background: var(--color-accent-hover);

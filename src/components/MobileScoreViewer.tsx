@@ -90,6 +90,19 @@ export function MobileScoreViewer() {
         await task.promise;
 
         if (!isCancelled) {
+          if (settings.outputColorMode === 'monochrome' && ctx) {
+            const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imgData.data;
+            const thresh = settings.fixedThreshold;
+            for (let i = 0; i < data.length; i += 4) {
+              const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+              const v = lum >= thresh ? 255 : 0;
+              data[i] = v;
+              data[i + 1] = v;
+              data[i + 2] = v;
+            }
+            ctx.putImageData(imgData, 0, 0);
+          }
           const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
           setImgUrl(dataUrl);
           setImgSize({ width: canvas.width / dpr, height: canvas.height / dpr });
@@ -115,7 +128,7 @@ export function MobileScoreViewer() {
     return () => {
       isCancelled = true;
       if (renderTaskRef.current) {
-        renderTaskRef.current.cancel();
+        try { renderTaskRef.current.cancel(); } catch (e) {}
         renderTaskRef.current = null;
       }
       if (pageObjRef.current) {
@@ -123,7 +136,7 @@ export function MobileScoreViewer() {
         pageObjRef.current = null;
       }
     };
-  }, [pdfDoc, currentPage, pages, zoom, zoomMode]);
+  }, [pdfDoc, currentPage, pages, zoom, zoomMode, settings.outputColorMode, settings.fixedThreshold]);
 
   const showSplitLine = settings.pageProcessingMode === 'spread_split' && !settings.independentSplitFrames;
   const isIndependent = settings.pageProcessingMode === 'spread_split' && settings.independentSplitFrames;
@@ -157,6 +170,7 @@ export function MobileScoreViewer() {
   return (
     <div
       ref={containerRef}
+      data-testid="mobile-score-viewer"
       style={{
         flex: 1,
         position: 'relative',
@@ -185,6 +199,7 @@ export function MobileScoreViewer() {
           <img
             src={imgUrl}
             alt="Score Page"
+            data-testid="mobile-score-canvas"
             style={{
               width: '100%',
               height: '100%',

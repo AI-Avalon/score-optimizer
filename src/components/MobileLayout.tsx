@@ -78,15 +78,7 @@ export function MobileLayout() {
 
 
   const updateMobileSettings = (partial: Partial<any>) => {
-    const store = useScoreStore.getState();
-    const currentOverride = store.pageOverrides[store.currentPage];
-    if (currentOverride) {
-      store.pageOverrides[store.currentPage] = { ...currentOverride, ...partial };
-      // trigger re-render by calling a dummy state update or explicitly setting overrides
-      useScoreStore.setState({ pageOverrides: { ...store.pageOverrides }, settingsVersion: store.settingsVersion + 1 });
-    } else {
-      store.updateSettings(partial);
-    }
+    useScoreStore.getState().updateSettings(partial);
   };
 
   const globalSettings = useScoreStore(s => s.settings);
@@ -325,7 +317,7 @@ export function MobileLayout() {
           <ChevronLeft size={24} />
         </button>
         
-        <button type="button" className="btn btn-icon" aria-label="戻す" onClick={(e) => { e.preventDefault(); e.stopPropagation(); undoAction(); }} style={{ width: '48px', height: '48px', borderRadius: '12px', background: 'transparent' }}>
+        <button type="button" className="btn btn-icon" aria-label="戻す" data-testid="undo-btn" onClick={(e) => { e.preventDefault(); e.stopPropagation(); undoAction(); }} style={{ width: '48px', height: '48px', borderRadius: '12px', background: 'transparent' }}>
           <Undo2 size={22} />
         </button>
         
@@ -336,7 +328,9 @@ export function MobileLayout() {
         {/* ✋ / ✂️ Touch Mode Toggle */}
         <div style={{ display: 'flex', background: 'var(--color-surface)', borderRadius: '12px', padding: '4px' }}>
           <button 
-            type="button" 
+            type="button"
+            aria-label="スクロール"
+            data-testid="mode-scroll"
             onClick={() => setTouchMode('scroll')}
             style={{ 
               width: '48px', height: '48px', borderRadius: '8px', 
@@ -348,7 +342,9 @@ export function MobileLayout() {
             <Hand size={20} />
           </button>
           <button 
-            type="button" 
+            type="button"
+            aria-label="枠調整"
+            data-testid="mode-crop"
             onClick={() => setTouchMode('crop')}
             style={{ 
               width: '48px', height: '48px', borderRadius: '8px', 
@@ -378,7 +374,7 @@ export function MobileLayout() {
       {activeSheet !== 'none' && (
         <>
           <div onClick={() => setActiveSheet('none')} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 90, animation: 'fadeIn 0.2s ease' }} />
-          <div style={{
+          <div data-testid="mobile-bottom-sheet" style={{
             position: 'fixed', bottom: '64px', left: 0, right: 0, maxHeight: 'calc(65dvh - 64px)',
             background: 'var(--color-panel)', borderTop: '1px solid var(--color-border)',
             borderRadius: '24px 24px 0 0', zIndex: 100,
@@ -397,11 +393,11 @@ export function MobileLayout() {
                   <div style={{ fontSize: '18px', fontWeight: 700 }}>枠微動 (Nudge)</div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
                     <div />
-                    <button type="button" className="btn btn-surface" style={{ height: '64px', borderRadius: '16px' }} onClick={() => doNudge(0, -0.005)}><ArrowUp size={24} /></button>
+                    <button type="button" data-testid="nudge-up" className="btn btn-surface" style={{ height: '64px', borderRadius: '16px' }} onClick={() => doNudge(0, -0.005)}><ArrowUp size={24} /></button>
                     <div />
-                    <button type="button" className="btn btn-surface" style={{ height: '64px', borderRadius: '16px' }} onClick={() => doNudge(-0.005, 0)}><ArrowLeft size={24} /></button>
-                    <button type="button" className="btn btn-surface" style={{ height: '64px', borderRadius: '16px' }} onClick={() => doNudge(0, 0.005)}><ArrowDown size={24} /></button>
-                    <button type="button" className="btn btn-surface" style={{ height: '64px', borderRadius: '16px' }} onClick={() => doNudge(0.005, 0)}><ArrowRight size={24} /></button>
+                    <button type="button" data-testid="nudge-left" className="btn btn-surface" style={{ height: '64px', borderRadius: '16px' }} onClick={() => doNudge(-0.005, 0)}><ArrowLeft size={24} /></button>
+                    <button type="button" data-testid="nudge-down" className="btn btn-surface" style={{ height: '64px', borderRadius: '16px' }} onClick={() => doNudge(0, 0.005)}><ArrowDown size={24} /></button>
+                    <button type="button" data-testid="nudge-right" className="btn btn-surface" style={{ height: '64px', borderRadius: '16px' }} onClick={() => doNudge(0.005, 0)}><ArrowRight size={24} /></button>
                   </div>
                   <button type="button" className="btn btn-accent" style={{ marginTop: '16px', width: '100%', padding: '16px', borderRadius: '12px' }} onClick={fitFullScreen}>
                     <Maximize size={18} style={{ marginRight: '8px' }} />
@@ -432,16 +428,16 @@ export function MobileLayout() {
                   {/* シートヘッダー & タブ切り替えバー */}
                   <div style={{ flexShrink: 0, borderBottom: '1px solid var(--color-border)', padding: '0 16px 12px' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px', background: 'var(--color-surface)', padding: '4px', borderRadius: '12px', fontSize: '12px', fontWeight: 600 }}>
-                      <button type="button" onClick={() => setActiveTab('paper')} style={{ padding: '8px 4px', borderRadius: '8px', background: activeTab === 'paper' ? 'var(--color-accent)' : 'transparent', color: activeTab === 'paper' ? '#fff' : 'var(--color-text-muted)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', border: 'none' }}>
+                      <button type="button" data-testid="tab-paper" onClick={() => setActiveTab('paper')} style={{ padding: '8px 4px', borderRadius: '8px', background: activeTab === 'paper' ? 'var(--color-accent)' : 'transparent', color: activeTab === 'paper' ? '#fff' : 'var(--color-text-muted)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', border: 'none' }}>
                         <FileText size={16} /> 用紙・モード
                       </button>
-                      <button type="button" onClick={() => setActiveTab('crop')} style={{ padding: '8px 4px', borderRadius: '8px', background: activeTab === 'crop' ? 'var(--color-accent)' : 'transparent', color: activeTab === 'crop' ? '#fff' : 'var(--color-text-muted)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', border: 'none' }}>
+                      <button type="button" data-testid="tab-crop" onClick={() => setActiveTab('crop')} style={{ padding: '8px 4px', borderRadius: '8px', background: activeTab === 'crop' ? 'var(--color-accent)' : 'transparent', color: activeTab === 'crop' ? '#fff' : 'var(--color-text-muted)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', border: 'none' }}>
                         <Crop size={16} /> トリミング
                       </button>
-                      <button type="button" onClick={() => setActiveTab('filter')} style={{ padding: '8px 4px', borderRadius: '8px', background: activeTab === 'filter' ? 'var(--color-accent)' : 'transparent', color: activeTab === 'filter' ? '#fff' : 'var(--color-text-muted)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', border: 'none' }}>
+                      <button type="button" data-testid="tab-filter" onClick={() => setActiveTab('filter')} style={{ padding: '8px 4px', borderRadius: '8px', background: activeTab === 'filter' ? 'var(--color-accent)' : 'transparent', color: activeTab === 'filter' ? '#fff' : 'var(--color-text-muted)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', border: 'none' }}>
                         <SlidersHorizontal size={16} /> 画質・二値化
                       </button>
-                      <button type="button" onClick={() => setActiveTab('page')} style={{ padding: '8px 4px', borderRadius: '8px', background: activeTab === 'page' ? 'var(--color-accent)' : 'transparent', color: activeTab === 'page' ? '#fff' : 'var(--color-text-muted)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', border: 'none' }}>
+                      <button type="button" data-testid="tab-page" onClick={() => setActiveTab('page')} style={{ padding: '8px 4px', borderRadius: '8px', background: activeTab === 'page' ? 'var(--color-accent)' : 'transparent', color: activeTab === 'page' ? '#fff' : 'var(--color-text-muted)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', border: 'none' }}>
                         <Settings size={16} /> 個別・回転
                       </button>
                     </div>
@@ -481,6 +477,7 @@ export function MobileLayout() {
                         <div>
                           <div className="section-title">用紙判型</div>
                           <select
+                            data-testid="paper-select"
                             value={selectedPaper}
                             onChange={(e) => setSelectedPaper(e.target.value as PaperPresetKey)}
                             style={{ width: '100%', padding: '16px', borderRadius: '12px', background: 'var(--color-surface)', color: 'var(--color-text)', border: '1px solid var(--color-border)', fontSize: '16px', outline: 'none', appearance: 'none' }}
@@ -489,6 +486,7 @@ export function MobileLayout() {
                             <option value="b4_portrait">B4 縦 (日本のオケ標準)</option>
                             <option value="kiku_music">菊倍判 (楽譜標準)</option>
                             <option value="a3_landscape">A3 横 (見開きスコア)</option>
+                            <option value="a3_portrait">A3 縦</option>
                             <option value="us_letter">US Letter</option>
                             <option value="custom">カスタム (mm入力)</option>
                           </select>
@@ -509,7 +507,7 @@ export function MobileLayout() {
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                               <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>余白 (mm)</span>
-                              <input type="number" value={marginMm} onChange={(e) => setMarginMm(Number(e.target.value) || 0)} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-base)', color: '#fff' }} min={0} max={50} />
+                              <input type="number" data-testid="margin-input" value={marginMm} onChange={(e) => setMarginMm(Number(e.target.value) || 0)} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--color-base)', color: '#fff' }} min={0} max={50} />
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                               <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>アスペクト比</span>
@@ -521,10 +519,12 @@ export function MobileLayout() {
 
                           <div className="section-title">出力DPI</div>
                           <select
+                            data-testid="dpi-select"
                             value={exportDpi}
                             onChange={(e) => setExportDpi(Number(e.target.value))}
                             style={{ width: '100%', padding: '16px', borderRadius: '12px', background: 'var(--color-surface)', color: 'var(--color-text)', border: '1px solid var(--color-border)', fontSize: '16px', outline: 'none', appearance: 'none', marginBottom: '16px' }}
                           >
+                            <option value={72}>72 DPI (プレビュー)</option>
                             <option value={150}>150 DPI (軽量)</option>
                             <option value={200}>200 DPI</option>
                             <option value={300}>300 DPI (標準印刷)</option>
@@ -585,8 +585,8 @@ export function MobileLayout() {
                                 このページだけ個別設定にする
                               </button>
                             ) : (
-                              <button type="button" onClick={() => { removePageOverride(); showToast('個別設定を解除しました'); }} style={{ padding: '12px', borderRadius: '12px', fontWeight: 700, border: '1px solid var(--color-danger)', color: 'var(--color-danger)', background: 'transparent' }}>
-                                個別設定を解除して全体に従う
+                              <button type="button" data-testid="remove-page-override" onClick={() => { removePageOverride(); showToast('個別設定を解除しました'); }} style={{ padding: '12px', borderRadius: '12px', fontWeight: 700, border: '1px solid var(--color-danger)', color: 'var(--color-danger)', background: 'transparent' }}>
+                                全体設定に戻す
                               </button>
                             )}
                           </div>

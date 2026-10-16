@@ -167,10 +167,15 @@ export interface ProcessSettings {
   frontMatterMode: FrontMatterMode;
   /** 見開き分割時、左右で個別のクロップ枠を使用するか */
   independentSplitFrames: boolean;
+  /** 用紙判型キー */
+  selectedPaper: PaperPresetKey;
+  /** カスタム用紙サイズ (mm) */
+  customPaperMm: { w: number; h: number };
+  /** 余白 (mm) */
+  marginMm: number;
 }
 
-// ─── PageOverride (app.py L39-53 完全移植) ─────────────────────────────
-// render_dpi, output_dpi, bodyStartPage, frontMatterMode は全体設定に属する
+// ─── PageOverride (app.py L39-53 完全移植 + 用紙・余白拡張) ────────────
 
 export interface PageOverride {
   pageProcessingMode: PageProcessingMode;
@@ -187,6 +192,9 @@ export interface PageOverride {
   fixedThreshold: number;
   outputColorMode: OutputColorMode;
   independentSplitFrames: boolean;
+  selectedPaper: PaperPresetKey;
+  customPaperMm: { w: number; h: number };
+  marginMm: number;
 }
 
 // ─── ページ管理 (仮想ページ配列) ──────────────────────────────────────
@@ -210,7 +218,13 @@ export type HistoryAction =
   | { type: 'restore'; pageIndex: number }
   | { type: 'insertBlank'; pageIndex: number }
   | { type: 'removeBlank'; pageIndex: number }
-  | { type: 'rotate'; pageIndex: number; prevRotation: RotationDeg; newRotation: RotationDeg };
+  | { type: 'rotate'; pageIndex: number; prevRotation: RotationDeg; newRotation: RotationDeg }
+  | {
+      type: 'crop';
+      pageIndex: number;
+      prevTrim: { left: number; right: number; top: number; bottom: number };
+      newTrim: { left: number; right: number; top: number; bottom: number };
+    };
 
 // ─── プログレス情報 ───────────────────────────────────────────────────
 
@@ -239,6 +253,9 @@ export const DEFAULT_SETTINGS: ProcessSettings = {
   bodyStartPage: 2,
   frontMatterMode: 'single',
   independentSplitFrames: false,
+  selectedPaper: 'a4_portrait',
+  customPaperMm: { w: 210, h: 297 },
+  marginMm: 0,
 };
 
 export const FULL_PAGE_RECT: NormalizedRect = { x: 0, y: 0, width: 1, height: 1 };

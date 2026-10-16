@@ -252,23 +252,14 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
         isLoading: false,
         pages: pageEntries,
         detectedCropRect: null,
+        selectedPaper: get().settings.selectedPaper,
+        customPaperMm: { ...get().settings.customPaperMm },
+        marginMm: get().settings.marginMm,
         cropRect: computeCropRect(get().settings, null),
         leftCropRect: computeCropRect(get().settings, null),
         rightCropRect: computeCropRect(get().settings, null),
         loadingProgress: null,
       });
-
-      // 自動黒枠検出と最適なDPIの推定
-      try {
-        const page = await doc.getPage(1) as unknown as { getViewport: (p: {scale: number}) => {width: number} };
-        const vp = page.getViewport({ scale: 1 });
-        // ざっくり推定 (595pt=A4 に対して 2倍以上なら 600DPI相当、など)
-        let estimatedDpi = 300;
-        if (vp.width > 2000) estimatedDpi = 600;
-        else if (vp.width > 1500) estimatedDpi = 400;
-        else if (vp.width < 500) estimatedDpi = 150;
-        set({ exportDpi: estimatedDpi });
-      } catch(e) {}
 
       get().detectBlackMargins();
     } catch (err) {
@@ -279,13 +270,25 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
 
   setCurrentPage: (page: number) => {
     const state = get();
+    if (state.pages.length === 0) return;
     const clamped = Math.max(0, Math.min(state.pages.length - 1, page));
-    set({ currentPage: clamped, detectedCropRect: null });
-    // 新ページで自動検出
+    const effective = get().getEffectiveSettings(clamped);
+    const newCrop = computeCropRect(effective, null);
+
+    set({
+      currentPage: clamped,
+      detectedCropRect: null,
+      selectedPaper: effective.selectedPaper,
+      customPaperMm: { ...effective.customPaperMm },
+      marginMm: effective.marginMm,
+      cropRect: newCrop,
+      leftCropRect: newCrop,
+      rightCropRect: newCrop,
+    });
+
+    // 新ページで自動検出が有効な場合のみ実行
     const currentPageEntry = state.pages[clamped];
-    if (state.settings.autoCropEnabled && currentPageEntry && !currentPageEntry.isBlank && !currentPageEntry.deleted) {
-      const newCrop = computeCropRect(state.settings, null);
-      set({ cropRect: newCrop, leftCropRect: newCrop, rightCropRect: newCrop });
+    if (effective.autoCropEnabled && currentPageEntry && !currentPageEntry.isBlank && !currentPageEntry.deleted) {
       get().detectBlackMargins();
     }
   },
@@ -293,47 +296,72 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
   updateSettings: (partial: Partial<ProcessSettings>) => {
     const state = get();
     const override = state.pageOverrides[state.currentPage];
-    
+
     if (override) {
-      const newOverride = { ...override };
+      const newOverride: PageOverride = { ...override };
       let hasOverrideChanges = false;
-      const newGlobalSettings = { ...state.settings };
+      const newGlobalSettings: ProcessSettings = { ...state.settings };
       let hasGlobalChanges = false;
 
       for (const [key, value] of Object.entries(partial)) {
         if (key in newOverride) {
-          (newOverride as any)[key] = value;
+          (newOverride as unknown as Record<string, unknown>)[key] = value;
           hasOverrideChanges = true;
         } else {
-          (newGlobalSettings as any)[key] = value;
+          (newGlobalSettings as unknown as Record<string, unknown>)[key] = value;
           hasGlobalChanges = true;
         }
       }
 
-      if (hasOverrideChanges) {
-        state.pageOverrides[state.currentPage] = newOverride;
-        set({ pageOverrides: { ...state.pageOverrides } });
-      }
-      
-      const effective = get().getEffectiveSettings(state.currentPage);
+      const nextOverrides = hasOverrideChanges
+        ? { ...state.pageOverrides, [state.currentPage]: newOverride }
+        : state.pageOverrides;
+
+      const effective: ProcessSettings = {
+        ...(hasGlobalChanges ? newGlobalSettings : state.settings),
+        ...newOverride,
+      };
       const newCrop = computeCropRect(effective, state.detectedCropRect);
-      
-      if (hasGlobalChanges) {
-        set({ settings: newGlobalSettings, cropRect: newCrop, leftCropRect: newCrop, rightCropRect: newCrop });
-      } else if (hasOverrideChanges) {
-        set({ cropRect: newCrop, leftCropRect: newCrop, rightCropRect: newCrop });
-      }
+
+      set({
+        ...(hasGlobalChanges ? { settings: newGlobalSettings } : {}),
+        ...(hasOverrideChanges ? { pageOverrides: nextOverrides } : {}),
+        selectedPaper: effective.selectedPaper,
+        customPaperMm: { ...effective.customPaperMm },
+        marginMm: effective.marginMm,
+        cropRect: newCrop,
+        leftCropRect: newCrop,
+        rightCropRect: newCrop,
+      });
     } else {
-      const newSettings = { ...state.settings, ...partial };
+      const newSettings: ProcessSettings = { ...state.settings, ...partial };
       const newCrop = computeCropRect(newSettings, state.detectedCropRect);
-      set({ settings: newSettings, cropRect: newCrop, leftCropRect: newCrop, rightCropRect: newCrop });
+      set({
+        settings: newSettings,
+        selectedPaper: newSettings.selectedPaper,
+        customPaperMm: { ...newSettings.customPaperMm },
+        marginMm: newSettings.marginMm,
+        cropRect: newCrop,
+        leftCropRect: newCrop,
+        rightCropRect: newCrop,
+      });
     }
   },
 
   setSplitOffsetPercent: (percent: number) => {
     // cropRect を再計算・初期化せずに splitOffsetPercent のみ更新
     const state = get();
-    set({ settings: { ...state.settings, splitOffsetPercent: percent } });
+    const override = state.pageOverrides[state.currentPage];
+    if (override) {
+      set({
+        pageOverrides: {
+          ...state.pageOverrides,
+          [state.currentPage]: { ...override, splitOffsetPercent: percent },
+        },
+      });
+    } else {
+      set({ settings: { ...state.settings, splitOffsetPercent: percent } });
+    }
   },
 
   setZoom: (zoom: number) => {
@@ -369,7 +397,7 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
 
   nudgeCropRect: (dx: number, dy: number) => {
     const state = get();
-    let newRect = { ...state.cropRect };
+    const newRect = { ...state.cropRect };
     newRect.x = Math.max(0, Math.min(1 - newRect.width, newRect.x + dx));
     newRect.y = Math.max(0, Math.min(1 - newRect.height, newRect.y + dy));
     get().commitCropRect(newRect);
@@ -383,17 +411,42 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
       : { x: 0, y: 0, width: 1, height: 1 };
     
     if (baseRect.width > 0 && baseRect.height > 0) {
-      const trimLeftPercent = ((newRect.x - baseRect.x) / baseRect.width) * 100;
-      const trimTopPercent = ((newRect.y - baseRect.y) / baseRect.height) * 100;
-      const trimRightPercent = ((baseRect.x + baseRect.width - (newRect.x + newRect.width)) / baseRect.width) * 100;
-      const trimBottomPercent = ((baseRect.y + baseRect.height - (newRect.y + newRect.height)) / baseRect.height) * 100;
-      
-      // updateSettings will automatically recompute and update cropRect, leftCropRect, rightCropRect
+      const trimLeftPercent = Math.max(0, ((newRect.x - baseRect.x) / baseRect.width) * 100);
+      const trimTopPercent = Math.max(0, ((newRect.y - baseRect.y) / baseRect.height) * 100);
+      const trimRightPercent = Math.max(0, ((baseRect.x + baseRect.width - (newRect.x + newRect.width)) / baseRect.width) * 100);
+      const trimBottomPercent = Math.max(0, ((baseRect.y + baseRect.height - (newRect.y + newRect.height)) / baseRect.height) * 100);
+
+      const prevTrim = {
+        left: effective.manualTrimLeftPercent,
+        right: effective.manualTrimRightPercent,
+        top: effective.manualTrimTopPercent,
+        bottom: effective.manualTrimBottomPercent,
+      };
+      const newTrim = {
+        left: trimLeftPercent,
+        right: trimRightPercent,
+        top: trimTopPercent,
+        bottom: trimBottomPercent,
+      };
+
+      // 履歴にクロップ変更を記録 (Undo/Redo対応)
+      const newHistory = state.history.slice(0, state.historyIndex + 1);
+      newHistory.push({
+        type: 'crop',
+        pageIndex: state.currentPage,
+        prevTrim,
+        newTrim,
+      });
+      set({
+        history: newHistory,
+        historyIndex: newHistory.length - 1,
+      });
+
       get().updateSettings({
-        manualTrimLeftPercent: Math.max(0, trimLeftPercent),
-        manualTrimTopPercent: Math.max(0, trimTopPercent),
-        manualTrimRightPercent: Math.max(0, trimRightPercent),
-        manualTrimBottomPercent: Math.max(0, trimBottomPercent),
+        manualTrimLeftPercent: trimLeftPercent,
+        manualTrimTopPercent: trimTopPercent,
+        manualTrimRightPercent: trimRightPercent,
+        manualTrimBottomPercent: trimBottomPercent,
       });
     } else {
       set({ cropRect: newRect, leftCropRect: newRect, rightCropRect: newRect });
@@ -426,6 +479,8 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
         set({ otsuWorker: worker });
       }
 
+      const eff = get().getEffectiveSettings(state.currentPage);
+
       // Worker へ Transferable 送信
       const response = await new Promise<OtsuWorkerResponse>((resolve) => {
         worker!.onmessage = (e: MessageEvent<OtsuWorkerResponse>) => {
@@ -434,8 +489,8 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
         worker!.postMessage(
           {
             imageBitmap: bitmap,
-            blackMarginThreshold: state.settings.blackMarginThreshold,
-            cropPaddingPx: state.settings.cropPaddingPx,
+            blackMarginThreshold: eff.blackMarginThreshold,
+            cropPaddingPx: eff.cropPaddingPx,
           },
           [bitmap],
         );
@@ -443,7 +498,8 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
 
       const currentState = get();
       const detected = response.cropRect;
-      const newCrop = computeCropRect(currentState.settings, detected);
+      const currentEff = get().getEffectiveSettings(currentState.currentPage);
+      const newCrop = computeCropRect(currentEff, detected);
       set({ detectedCropRect: detected, cropRect: newCrop, leftCropRect: newCrop, rightCropRect: newCrop, isDetecting: false });
     } catch (err) {
       console.error('Auto-detect failed:', err);
@@ -455,7 +511,7 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
 
   savePageOverride: () => {
     const state = get();
-    const s = state.settings;
+    const s = get().getEffectiveSettings(state.currentPage);
     const override: PageOverride = {
       pageProcessingMode: s.pageProcessingMode,
       splitOffsetPercent: s.splitOffsetPercent,
@@ -471,6 +527,9 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
       fixedThreshold: s.fixedThreshold,
       outputColorMode: s.outputColorMode,
       independentSplitFrames: s.independentSplitFrames,
+      selectedPaper: s.selectedPaper,
+      customPaperMm: { ...s.customPaperMm },
+      marginMm: s.marginMm,
     };
     set({
       pageOverrides: { ...state.pageOverrides, [state.currentPage]: override },
@@ -481,7 +540,17 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
     const state = get();
     const newOverrides = { ...state.pageOverrides };
     delete newOverrides[state.currentPage];
-    set({ pageOverrides: newOverrides });
+    const globalSettings = state.settings;
+    const newCrop = computeCropRect(globalSettings, state.detectedCropRect);
+    set({
+      pageOverrides: newOverrides,
+      selectedPaper: globalSettings.selectedPaper,
+      customPaperMm: { ...globalSettings.customPaperMm },
+      marginMm: globalSettings.marginMm,
+      cropRect: newCrop,
+      leftCropRect: newCrop,
+      rightCropRect: newCrop,
+    });
   },
 
   // ── app.py L499-521 _effective_settings_for_page 完全移植 ──────
@@ -507,6 +576,9 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
       fixedThreshold: override.fixedThreshold,
       outputColorMode: override.outputColorMode,
       independentSplitFrames: override.independentSplitFrames,
+      selectedPaper: override.selectedPaper,
+      customPaperMm: { ...override.customPaperMm },
+      marginMm: override.marginMm,
     };
   },
 
@@ -517,15 +589,27 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
   // ── 用紙判型アクション ──────────────────────────────────────────
 
   setSelectedPaper: (key: PaperPresetKey) => {
-    set({ selectedPaper: key });
+    const state = get();
+    if (state.pages.length > 0 && !(state.currentPage in state.pageOverrides)) {
+      get().savePageOverride();
+    }
+    get().updateSettings({ selectedPaper: key });
   },
 
   setCustomPaperMm: (w: number, h: number) => {
-    set({ customPaperMm: { w, h } });
+    const state = get();
+    if (state.pages.length > 0 && !(state.currentPage in state.pageOverrides)) {
+      get().savePageOverride();
+    }
+    get().updateSettings({ customPaperMm: { w, h } });
   },
 
   setMarginMm: (mm: number) => {
-    set({ marginMm: Math.max(0, mm) });
+    const state = get();
+    if (state.pages.length > 0 && !(state.currentPage in state.pageOverrides)) {
+      get().savePageOverride();
+    }
+    get().updateSettings({ marginMm: Math.max(0, mm) });
   },
 
   getPaperConfig: () => {
@@ -567,6 +651,17 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
 
     const action = state.history[state.historyIndex];
     const newPages = [...state.pages];
+
+    if (action.type === 'crop') {
+      set({ historyIndex: state.historyIndex - 1 });
+      get().updateSettings({
+        manualTrimLeftPercent: action.prevTrim.left,
+        manualTrimRightPercent: action.prevTrim.right,
+        manualTrimTopPercent: action.prevTrim.top,
+        manualTrimBottomPercent: action.prevTrim.bottom,
+      });
+      return;
+    }
 
     switch (action.type) {
       case 'delete':
@@ -616,6 +711,17 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
 
     const action = state.history[state.historyIndex + 1];
     const newPages = [...state.pages];
+
+    if (action.type === 'crop') {
+      set({ historyIndex: state.historyIndex + 1 });
+      get().updateSettings({
+        manualTrimLeftPercent: action.newTrim.left,
+        manualTrimRightPercent: action.newTrim.right,
+        manualTrimTopPercent: action.newTrim.top,
+        manualTrimBottomPercent: action.newTrim.bottom,
+      });
+      return;
+    }
 
     switch (action.type) {
       case 'delete':
@@ -731,10 +837,17 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
   applySettingsToAllPages: () => {
     const state = get();
     const effective = get().getEffectiveSettings(state.currentPage);
-    
+    const newCrop = computeCropRect(effective, state.detectedCropRect);
+
     // 全ページの個別オーバーライドを破棄して、ドキュメント共通設定として適用する
     set({
       settings: { ...effective },
+      selectedPaper: effective.selectedPaper,
+      customPaperMm: { ...effective.customPaperMm },
+      marginMm: effective.marginMm,
+      cropRect: newCrop,
+      leftCropRect: newCrop,
+      rightCropRect: newCrop,
       pageOverrides: {},
       applyToAllNotification: Date.now(),
       settingsVersion: state.settingsVersion + 1,
@@ -764,6 +877,9 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
           fixedThreshold: effective.fixedThreshold,
           outputColorMode: effective.outputColorMode,
           independentSplitFrames: effective.independentSplitFrames,
+          selectedPaper: effective.selectedPaper,
+          customPaperMm: { ...effective.customPaperMm },
+          marginMm: effective.marginMm,
         };
       }
     }
@@ -778,6 +894,9 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
   resetToDefaults: () => {
     set({
       settings: { ...DEFAULT_SETTINGS },
+      selectedPaper: DEFAULT_SETTINGS.selectedPaper,
+      customPaperMm: { ...DEFAULT_SETTINGS.customPaperMm },
+      marginMm: DEFAULT_SETTINGS.marginMm,
       pageOverrides: {},
       cropRect: { ...FULL_PAGE_RECT },
       leftCropRect: { ...FULL_PAGE_RECT },
@@ -805,7 +924,7 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
       const marginPt = convertMmToPt(get().marginMm);
 
       const blob = await exportToDpiPdf(
-        state.pdfDoc as unknown as any,
+        state.pdfDoc as unknown as Parameters<typeof exportToDpiPdf>[0],
         {
           dpi: state.exportDpi,
           cropRect: state.cropRect,
@@ -821,7 +940,7 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
           getEffectiveSettings: (pageIdx: number) => {
             const eff = get().getEffectiveSettings(pageIdx);
             return {
-              cropRect: get().cropRect,
+              cropRect: computeCropRect(eff, null),
               pageProcessingMode: eff.pageProcessingMode,
               splitOffsetPercent: eff.splitOffsetPercent,
               pageOrder: eff.pageOrder,

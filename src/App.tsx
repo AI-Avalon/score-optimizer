@@ -21,12 +21,17 @@ export default function App() {
   const cleanup = useScoreStore((s) => s.cleanup);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
-  // matchMedia リスナーでリアルタイム切替
+  // matchMedia & resize リスナーでリアルタイム切替
   useEffect(() => {
     const mql = window.matchMedia('(max-width: 767px)');
     const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    const resizeHandler = () => setIsMobile(window.innerWidth < 768);
     mql.addEventListener('change', handler);
-    return () => mql.removeEventListener('change', handler);
+    window.addEventListener('resize', resizeHandler);
+    return () => {
+      mql.removeEventListener('change', handler);
+      window.removeEventListener('resize', resizeHandler);
+    };
   }, []);
 
   // pdf-lifecycle-reviewer: cleanup on unmount

@@ -1,10 +1,10 @@
 import { useCallback, useRef } from 'react';
 import { useScoreStore } from '../store/useScoreStore';
 import { ZoomHUD } from './ZoomHUD';
-import { Download, Menu, HelpCircle } from 'lucide-react';
+import { Download, Menu, HelpCircle, Undo2 } from 'lucide-react';
 
 /**
- * Header — タイトル、PDF読込、ズームHUD、用紙選択、余白設定、300DPI出力
+ * Header — タイトル、PDF読込、ズームHUD、300DPI出力
  *
  * 「見開きテスト読込ボタン」は撤去済み。本番仕様のD&D + ファイル選択のみ。
  */
@@ -22,6 +22,7 @@ export function Header() {
   const pageOverrides = useScoreStore((s) => s.pageOverrides);
   const removePageOverride = useScoreStore((s) => s.removePageOverride);
   const setIsHelpOpen = useScoreStore((s) => s.setIsHelpOpen);
+  const undoAction = useScoreStore((s) => s.undoAction);
 
   const hasOverride = currentPage in pageOverrides;
 
@@ -34,7 +35,6 @@ export function Header() {
     },
     [loadPdfFromFile],
   );
-
 
   return (
     <header
@@ -85,11 +85,11 @@ export function Header() {
               textOverflow: 'ellipsis',
             }}
           >
-            — {pdfFileName}
+            {pdfFileName}
           </span>
         )}
 
-        {hasOverride && (
+        {pdfDoc && hasOverride && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '8px' }}>
             <span style={{ 
               background: 'var(--color-orange)', 
@@ -113,13 +113,26 @@ export function Header() {
         )}
       </div>
 
-      {/* Center: zoom HUD */}
+      {/* Center: zoom HUD (PDF読込後のみ表示) */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-        <ZoomHUD />
+        {pdfDoc && <ZoomHUD />}
       </div>
 
-      {/* Right: file select + export */}
+      {/* Right: undo + file select + help + export */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+        {pdfDoc && (
+          <button
+            type="button"
+            className="btn btn-sm btn-icon"
+            aria-label="戻す"
+            data-testid="undo-btn"
+            onClick={undoAction}
+            style={{ padding: '4px 8px' }}
+          >
+            <Undo2 size={14} />
+          </button>
+        )}
+
         <input
           ref={fileInputRef}
           type="file"
@@ -143,14 +156,16 @@ export function Header() {
           <HelpCircle size={14} style={{ marginRight: '4px' }} /> 使い方
         </button>
 
-        <button type="button"
-          className="btn btn-sm btn-accent"
-          onClick={exportPdf}
-          disabled={isExporting || isLoading || !pdfDoc}
-        >
-          <Download size={14} style={{ marginRight: '4px' }} />
-          {isExporting ? `${exportProgress}%` : 'PDFを出力'}
-        </button>
+        {pdfDoc && (
+          <button type="button"
+            className="btn btn-sm btn-accent"
+            onClick={exportPdf}
+            disabled={isExporting || isLoading}
+          >
+            <Download size={14} style={{ marginRight: '4px' }} />
+            {isExporting ? `${exportProgress}%` : 'PDFを出力'}
+          </button>
+        )}
       </div>
     </header>
   );

@@ -152,107 +152,97 @@ export function computeConstrainedCrop(
   if (handleId === 'c') {
     const width = right - left;
     const height = bottom - top;
-    let newLeft = Math.max(0, Math.min(1 - width, left + deltaXNorm));
-    let newTop = Math.max(0, Math.min(1 - height, top + deltaYNorm));
+    const newLeft = Math.max(0, Math.min(1 - width, left + deltaXNorm));
+    const newTop = Math.max(0, Math.min(1 - height, top + deltaYNorm));
     return {
       x: newLeft,
       y: newTop,
-      width: width,
-      height: height,
+      width,
+      height,
     };
   }
 
-  // ハンドルごとの移動
+  // ハンドルごとの一次移動と境界クランプ
   if (handleId.includes('r')) right = Math.min(1.0, Math.max(left + 0.02, right + deltaXNorm));
   if (handleId.includes('l')) left = Math.max(0.0, Math.min(right - 0.02, left + deltaXNorm));
   if (handleId.includes('b')) bottom = Math.min(1.0, Math.max(top + 0.02, bottom + deltaYNorm));
   if (handleId.includes('t')) top = Math.max(0.0, Math.min(bottom - 0.02, top + deltaYNorm));
 
-  // アスペクト比拘束の計算
+  // アスペクト比拘束の厳密計算 (Normalized空間での比率: normTargetRatio = targetRatio / pageAspect)
   if (aspectRatioLock && targetRatio > 0 && pageAspect > 0) {
-    // 画面正規化座標系での目標比率
     const normTargetRatio = targetRatio / pageAspect;
     const currentWidth = right - left;
     const currentHeight = bottom - top;
-    
-    console.log('[GEOM DEBUG]', { handleId, deltaXNorm, deltaYNorm, targetRatio, pageAspect, normTargetRatio, currentWidth, currentHeight });
 
     if (handleId === 'r' || handleId === 'l') {
-      const desiredHeight = currentWidth / normTargetRatio;
-      const heightDiff = desiredHeight - currentHeight;
-      top = Math.max(0, top - heightDiff / 2);
-      bottom = Math.min(1, top + desiredHeight);
-      
-      if (bottom - top < desiredHeight) {
-         const clampedHeight = bottom - top;
-         const finalWidth = clampedHeight * normTargetRatio;
-         if (handleId === 'r') right = left + finalWidth;
-         else left = right - finalWidth;
-      }
+      const centerY = (initialRect.y + initialRect.y + initialRect.height) / 2;
+      const maxW = handleId === 'r' ? 1 - left : right;
+      const limitW = Math.min(maxW, 1.0 * normTargetRatio);
+      const minW = Math.min(limitW, Math.max(0.02, 0.02 * normTargetRatio));
+      const finalW = Math.max(minW, Math.min(limitW, currentWidth));
+      const finalH = finalW / normTargetRatio;
+
+      if (handleId === 'r') right = left + finalW;
+      else left = right - finalW;
+
+      top = Math.max(0, Math.min(1 - finalH, centerY - finalH / 2));
+      bottom = top + finalH;
     } else if (handleId === 't' || handleId === 'b') {
-      const desiredWidth = currentHeight * normTargetRatio;
-      const widthDiff = desiredWidth - currentWidth;
-      left = Math.max(0, left - widthDiff / 2);
-      right = Math.min(1, left + desiredWidth);
-      
-      if (right - left < desiredWidth) {
-         const clampedWidth = right - left;
-         const finalHeight = clampedWidth / normTargetRatio;
-         if (handleId === 'b') bottom = top + finalHeight;
-         else top = bottom - finalHeight;
-      }
+      const centerX = (initialRect.x + initialRect.x + initialRect.width) / 2;
+      const maxH = handleId === 'b' ? 1 - top : bottom;
+      const limitH = Math.min(maxH, 1.0 / normTargetRatio);
+      const minH = Math.min(limitH, Math.max(0.02, 0.02 / normTargetRatio));
+      const finalH = Math.max(minH, Math.min(limitH, currentHeight));
+      const finalW = finalH * normTargetRatio;
+
+      if (handleId === 'b') bottom = top + finalH;
+      else top = bottom - finalH;
+
+      left = Math.max(0, Math.min(1 - finalW, centerX - finalW / 2));
+      right = left + finalW;
     } else {
-      // 四隅 (角) の場合
-      const useWidth = Math.abs(deltaXNorm) > Math.abs(deltaYNorm);
-      
-      if (useWidth) {
-        const desiredHeight = currentWidth / normTargetRatio;
-        if (handleId.includes('b')) {
-          bottom = top + desiredHeight;
-        } else {
-          top = bottom - desiredHeight;
-        }
-        
-        // はみ出し補正
-        if (bottom > 1 || top < 0) {
-           if (bottom > 1) bottom = 1;
-           if (top < 0) top = 0;
-           const finalHeight = bottom - top;
-           const finalWidth = finalHeight * normTargetRatio;
-           if (handleId.includes('r')) right = Math.min(1, left + finalWidth);
-           else left = Math.max(0, right - finalWidth);
-        }
+      // 四隅ハンドル (tl, tr, bl, br) — 対角アンカーを固定して厳密な縦横比を維持
+      const anchorX = handleId.includes('r') ? initialRect.x : initialRect.x + initialRect.width;
+      const anchorY = handleId.includes('b') ? initialRect.y : initialRect.y + initialRect.height;
+      const maxW = handleId.includes('r') ? 1 - anchorX : anchorX;
+      const maxH = handleId.includes('b') ? 1 - anchorY : anchorY;
+
+      const useWidth = Math.abs(deltaXNorm) >= Math.abs(deltaYNorm);
+      const desiredW = useWidth ? currentWidth : currentHeight * normTargetRatio;
+
+      const limitW = Math.min(maxW, maxH * normTargetRatio);
+      const minW = Math.min(limitW, Math.max(0.02, 0.02 * normTargetRatio));
+      const finalW = Math.max(minW, Math.min(limitW, desiredW));
+      const finalH = finalW / normTargetRatio;
+
+      if (handleId.includes('r')) {
+        left = anchorX;
+        right = anchorX + finalW;
       } else {
-        const desiredWidth = currentHeight * normTargetRatio;
-        if (handleId.includes('r')) {
-          right = left + desiredWidth;
-        } else {
-          left = right - desiredWidth;
-        }
-        
-        // はみ出し補正
-        if (right > 1 || left < 0) {
-           if (right > 1) right = 1;
-           if (left < 0) left = 0;
-           const finalWidth = right - left;
-           const finalHeight = finalWidth / normTargetRatio;
-           if (handleId.includes('b')) bottom = Math.min(1, top + finalHeight);
-           else top = Math.max(0, bottom - finalHeight);
-        }
+        right = anchorX;
+        left = anchorX - finalW;
+      }
+
+      if (handleId.includes('b')) {
+        top = anchorY;
+        bottom = anchorY + finalH;
+      } else {
+        bottom = anchorY;
+        top = anchorY - finalH;
       }
     }
   }
 
-  // 最終クランプ
+  // 最終境界クランプ
   left = Math.max(0, Math.min(1, left));
   right = Math.max(0, Math.min(1, right));
   top = Math.max(0, Math.min(1, top));
   bottom = Math.max(0, Math.min(1, bottom));
 
-  return { 
-    x: left, 
-    y: top, 
-    width: right - left, 
-    height: bottom - top 
+  return {
+    x: left,
+    y: top,
+    width: Math.max(0.01, right - left),
+    height: Math.max(0.01, bottom - top),
   };
 }

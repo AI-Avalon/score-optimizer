@@ -32,7 +32,10 @@ export function ScoreCanvas() {
   const rightCropRect = useScoreStore((s) => s.rightCropRect);
   const setRightCropRect = useScoreStore((s) => s.setRightCropRect);
   
-  const settings = useScoreStore((s) => s.settings);
+  const globalSettings = useScoreStore((s) => s.settings);
+  const pageOverrides = useScoreStore((s) => s.pageOverrides);
+  const override = pageOverrides[currentPage];
+  const settings = override ? { ...globalSettings, ...override } : globalSettings;
   const settingsVersion = useScoreStore((s) => s.settingsVersion);
   
   const isLoading = useScoreStore((s) => s.isLoading);
@@ -49,11 +52,16 @@ export function ScoreCanvas() {
 
   const [activeFrame, setActiveFrame] = useState<'main' | 'left' | 'right'>('main');
 
-  // --- Decoupled Rendering State ---
+  // --- Decoupled Rendering State + Sync Refs ---
   const [localCropRect, setLocalCropRect] = useState<NormalizedRect | null>(null);
   const [localLeftCropRect, setLocalLeftCropRect] = useState<NormalizedRect | null>(null);
   const [localRightCropRect, setLocalRightCropRect] = useState<NormalizedRect | null>(null);
   const [localSplitOffset, setLocalSplitOffset] = useState<number | null>(null);
+
+  const localCropRectRef = useRef<NormalizedRect | null>(null);
+  const localLeftCropRectRef = useRef<NormalizedRect | null>(null);
+  const localRightCropRectRef = useRef<NormalizedRect | null>(null);
+  const localSplitOffsetRef = useRef<number | null>(null);
 
   const detectedCropRect = useScoreStore((s) => s.detectedCropRect);
 
@@ -116,18 +124,18 @@ export function ScoreCanvas() {
       try {
         // 1. 古いタスクの確実なキャンセル
         if (renderTaskRef.current) {
-          renderTaskRef.current.cancel();
+          try { renderTaskRef.current.cancel(); } catch {}
           renderTaskRef.current = null;
         }
-        // 2. 古いページメモリの解放
+        // 2. 古いページメモリの解放 (cancel直後の競合をtry/catchで安全保護)
         if (pageObjRef.current) {
-          pageObjRef.current.cleanup();
+          try { pageObjRef.current.cleanup(); } catch {}
           pageObjRef.current = null;
         }
 
         const page = await (pdfDoc as unknown as { getPage(n: number): Promise<any> }).getPage(pageEntry.sourceIndex + 1);
         if (isCancelled) {
-          page.cleanup();
+          try { page.cleanup(); } catch {}
           return;
         }
         pageObjRef.current = page;
@@ -162,6 +170,20 @@ export function ScoreCanvas() {
         
         // 描画が完了した瞬間にメインキャンバスへ転写
         if (!isCancelled && canvas) {
+          if (settings.outputColorMode === 'monochrome' && offCtx) {
+            const imgData = offCtx.getImageData(0, 0, offscreen.width, offscreen.height);
+            const data = imgData.data;
+            const thresh = settings.fixedThreshold;
+            for (let i = 0; i < data.length; i += 4) {
+              const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+              const v = lum >= thresh ? 255 : 0;
+              data[i] = v;
+              data[i + 1] = v;
+              data[i + 2] = v;
+            }
+            offCtx.putImageData(imgData, 0, 0);
+          }
+
           canvas.width = viewport.width;
           canvas.height = viewport.height;
           canvas.style.width = `${viewport.width / dpr}px`;
@@ -179,7 +201,6 @@ export function ScoreCanvas() {
       } catch (err: any) {
         if (err?.name !== 'RenderingCancelledException' && !err?.message?.includes('cancelled')) {
           console.error('Render error:', err);
-          // エラートースト等を表示するならここで処理（今回はロード画面に巻き戻さない）
         }
       }
     };
@@ -215,13 +236,15 @@ export function ScoreCanvas() {
       cancelAnimationFrame(animationFrameId);
       observer.disconnect();
       if (renderTaskRef.current) {
-        renderTaskRef.current.cancel();
+        try { renderTaskRef.current.cancel(); } catch {}
         renderTaskRef.current = null;
       }
       if (pageObjRef.current) {
-        if (typeof pageObjRef.current.cleanup === 'function') {
-          pageObjRef.current.cleanup();
-        }
+        try {
+          if (typeof pageObjRef.current.cleanup === 'function') {
+            pageObjRef.current.cleanup();
+          }
+        } catch {}
         pageObjRef.current = null;
       }
     };
@@ -246,17 +269,23 @@ export function ScoreCanvas() {
       
       e.preventDefault();
       
-      const targetRect = activeFrame === 'left' ? leftCropRect 
-                       : activeFrame === 'right' ? rightCropRect 
-                       : cropRect;
-                       
-      let newRect = { ...targetRect };
-      newRect.x = Math.max(0, Math.min(1 - newRect.width, newRect.x + dx));
-      newRect.y = Math.max(0, Math.min(1 - newRect.height, newRect.y + dy));
-      
-      if (activeFrame === 'left') setLeftCropRect(newRect);
-      else if (activeFrame === 'right') setRightCropRect(newRect);
-      else setCropRect(newRect);
+      if (activeFrame === 'left') {
+        const newRect = {
+          ...leftCropRect,
+          x: Math.max(0, Math.min(1 - leftCropRect.width, leftCropRect.x + dx)),
+          y: Math.max(0, Math.min(1 - leftCropRect.height, leftCropRect.y + dy)),
+        };
+        setLeftCropRect(newRect);
+      } else if (activeFrame === 'right') {
+        const newRect = {
+          ...rightCropRect,
+          x: Math.max(0, Math.min(1 - rightCropRect.width, rightCropRect.x + dx)),
+          y: Math.max(0, Math.min(1 - rightCropRect.height, rightCropRect.y + dy)),
+        };
+        setRightCropRect(newRect);
+      } else {
+        useScoreStore.getState().nudgeCropRect(dx, dy);
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
@@ -282,8 +311,9 @@ export function ScoreCanvas() {
   // ── Handle Drag ─────────────────────────────────────────────────
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
+      const isDesktop = window.innerWidth >= 768;
       const currentTouchMode = useScoreStore.getState().touchMode;
-      if (currentTouchMode === 'scroll') return;
+      if (!isDesktop && currentTouchMode === 'scroll') return;
       
       const handle = (e.target as Element).closest('[data-handle-id]') as HTMLElement | null;
       if (!handle) return;
@@ -335,6 +365,7 @@ export function ScoreCanvas() {
       if (dragging === 'split-line') {
         const widthPercent = (normDx / startRect.width) * 100;
         const newOffset = Math.max(-20, Math.min(20, dragStartRef.current.splitOffset + widthPercent));
+        localSplitOffsetRef.current = newOffset;
         setLocalSplitOffset(newOffset);
         return;
       }
@@ -342,7 +373,7 @@ export function ScoreCanvas() {
       let newRect = { ...startRect };
 
       // Translate (Move) entire frame
-      if (dragging === 'c') {
+      if (dragging === 'c' || dragging === 'pan') {
         newRect.x = Math.max(0, Math.min(1 - startRect.width, startRect.x + normDx));
         newRect.y = Math.max(0, Math.min(1 - startRect.height, startRect.y + normDy));
 
@@ -373,7 +404,6 @@ export function ScoreCanvas() {
           }
 
           if (snapped && navigator.vibrate) {
-            // Check if we just transitioned to snapped state to avoid continuous vibration
             const prevX = activeFrame === 'left' ? localLeftCropRect?.x : activeFrame === 'right' ? localRightCropRect?.x : localCropRect?.x;
             const prevY = activeFrame === 'left' ? localLeftCropRect?.y : activeFrame === 'right' ? localRightCropRect?.y : localCropRect?.y;
             
@@ -384,17 +414,19 @@ export function ScoreCanvas() {
         }
       } else {
         // ── Crop Geometry Constraint Solver ──
-        const paperConfig = useScoreStore.getState().getPaperConfig();
-        const targetRatio = settings.pageProcessingMode === 'spread_split' && !settings.independentSplitFrames
+        const storeState = useScoreStore.getState();
+        const paperConfig = storeState.getPaperConfig();
+        const effSettings = storeState.getEffectiveSettings(storeState.currentPage);
+        const targetRatio = effSettings.pageProcessingMode === 'spread_split' && !effSettings.independentSplitFrames
           ? (paperConfig.widthPt * 2) / paperConfig.heightPt
           : paperConfig.widthPt / paperConfig.heightPt;
           
-        let pageAspect = 1.0;
+        let pageAspect = canvasSize.height > 0 ? canvasSize.width / canvasSize.height : 1.0;
         if (pageObjRef.current) {
           try {
             const viewport = pageObjRef.current.getViewport({ scale: 1.0, rotation: pages[currentPage]?.rotation || 0 });
             if (viewport.height > 0) pageAspect = viewport.width / viewport.height;
-          } catch(e) {}
+          } catch {}
         }
         
         newRect = computeConstrainedCrop(
@@ -402,28 +434,45 @@ export function ScoreCanvas() {
           dragging,
           normDx,
           normDy,
-          isAspectRatioLocked && selectedPaper !== 'custom',
+          storeState.isAspectRatioLocked && storeState.selectedPaper !== 'custom',
           targetRatio,
           pageAspect
         );
       }
 
-      if (activeFrame === 'left') setLocalLeftCropRect(newRect);
-      else if (activeFrame === 'right') setLocalRightCropRect(newRect);
-      else setLocalCropRect(newRect);
+      if (activeFrame === 'left') {
+        localLeftCropRectRef.current = newRect;
+        setLocalLeftCropRect(newRect);
+      } else if (activeFrame === 'right') {
+        localRightCropRectRef.current = newRect;
+        setLocalRightCropRect(newRect);
+      } else {
+        localCropRectRef.current = newRect;
+        setLocalCropRect(newRect);
+      }
     },
-    [dragging, activeFrame, canvasSize, localCropRect, localLeftCropRect, localRightCropRect, detectedCropRect, isAspectRatioLocked, selectedPaper, settings.pageProcessingMode, settings.independentSplitFrames],
+    [dragging, activeFrame, canvasSize, localCropRect, localLeftCropRect, localRightCropRect, detectedCropRect, isAspectRatioLocked, selectedPaper, settings.pageProcessingMode, settings.independentSplitFrames, currentPage, pages],
   );
 
   const handlePointerUp = useCallback(() => {
-    // Commit local state to Zustand store
+    // Commit local state to Zustand store using synchronous refs
     const store = useScoreStore.getState();
-    if (localCropRect) store.commitCropRect(localCropRect);
-    if (localLeftCropRect) store.setLeftCropRect(localLeftCropRect);
-    if (localRightCropRect) store.setRightCropRect(localRightCropRect);
-    if (localSplitOffset !== null) store.setSplitOffsetPercent(localSplitOffset);
+    const committedCrop = localCropRectRef.current ?? localCropRect;
+    const committedLeft = localLeftCropRectRef.current ?? localLeftCropRect;
+    const committedRight = localRightCropRectRef.current ?? localRightCropRect;
+    const committedSplit = localSplitOffsetRef.current ?? localSplitOffset;
 
-    // Reset local state
+    if (committedCrop) store.commitCropRect(committedCrop);
+    if (committedLeft) store.setLeftCropRect(committedLeft);
+    if (committedRight) store.setRightCropRect(committedRight);
+    if (committedSplit !== null) store.setSplitOffsetPercent(committedSplit);
+
+    // Reset local state and refs
+    localCropRectRef.current = null;
+    localLeftCropRectRef.current = null;
+    localRightCropRectRef.current = null;
+    localSplitOffsetRef.current = null;
+
     setLocalCropRect(null);
     setLocalLeftCropRect(null);
     setLocalRightCropRect(null);
@@ -431,7 +480,7 @@ export function ScoreCanvas() {
 
     setDragging(null);
     dragStartRef.current = null;
-  }, [localCropRect, localLeftCropRect, localRightCropRect, localSplitOffset, setCropRect, setLeftCropRect, setRightCropRect]);
+  }, [localCropRect, localLeftCropRect, localRightCropRect, localSplitOffset]);
 
   // ── Render Helpers ──────────────────────────────────────────────
   const renderCropOverlay = (rect: NormalizedRect, frameId: 'main' | 'left' | 'right', color: string) => {
@@ -441,9 +490,10 @@ export function ScoreCanvas() {
     const height = rect.height * canvasSize.height;
     const isActive = activeFrame === frameId;
     const isDesktop = window.innerWidth >= 768;
+    const isPanning = dragging === 'c' || dragging === 'pan';
 
     const handles = [
-      { id: 'c',  x: left + width/2, y: top + height/2, cursor: 'move', w: width - 20, h: height - 20 },
+      { id: 'pan', x: left + width/2, y: top + height/2, cursor: 'move', w: width - 20, h: height - 20 },
       { id: 'tl', x: left, y: top, cursor: 'nwse-resize' },
       { id: 'tr', x: left + width, y: top, cursor: 'nesw-resize' },
       { id: 'bl', x: left, y: top + height, cursor: 'nesw-resize' },
@@ -457,6 +507,7 @@ export function ScoreCanvas() {
     return (
       <div key={frameId}>
         <div
+          data-testid={`crop-frame-${frameId}`}
           style={{
             position: 'absolute',
             left: `${left}px`,
@@ -467,14 +518,14 @@ export function ScoreCanvas() {
             borderRadius: '1px',
             pointerEvents: 'none',
             zIndex: isActive ? 6 : 5,
-            opacity: isDesktop ? (dragging === 'c' && isActive ? 0.5 : 1) : (touchMode === 'scroll' ? 0.3 : (dragging === 'c' && isActive ? 0.5 : 1)),
-            backgroundColor: dragging === 'c' && isActive ? `${color}1A` : 'transparent',
+            opacity: isDesktop ? (isPanning && isActive ? 0.5 : 1) : (touchMode === 'scroll' ? 0.3 : (isPanning && isActive ? 0.5 : 1)),
+            backgroundColor: isPanning && isActive ? `${color}1A` : 'transparent',
             transition: 'opacity 0.2s ease',
           }}
         />
 
         {handles.map((h) => {
-          if (h.id === 'c') {
+          if (h.id === 'pan') {
              // Center handle for Translate
              return (
               <div
@@ -523,7 +574,7 @@ export function ScoreCanvas() {
   };
 
   // ── Loupe HUD ──
-  const isDraggingHandle = dragging && dragging !== 'c' && dragging !== 'split-line';
+  const isDraggingHandle = dragging && dragging !== 'c' && dragging !== 'pan' && dragging !== 'split-line';
   const showLoupe = isDraggingHandle && touchMode === 'crop' && dragStartRef.current;
 
   return (
@@ -540,7 +591,7 @@ export function ScoreCanvas() {
         alignItems: 'center',
         justifyContent: 'center',
         padding: '36px',
-        cursor: dragging ? (dragging === 'c' ? 'move' : 'grabbing') : 'default',
+        cursor: dragging ? ((dragging === 'c' || dragging === 'pan') ? 'move' : 'grabbing') : 'default',
         touchAction: 'none',
       }}
     >
@@ -571,7 +622,7 @@ export function ScoreCanvas() {
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          gap: '12px',
+          gap: '16px',
           color: 'var(--color-text-dim)',
           fontSize: '14px',
           textAlign: 'center',
@@ -579,6 +630,16 @@ export function ScoreCanvas() {
         }}>
           <FileText size={48} style={{ opacity: 0.3 }} />
           <p>楽譜PDFをドラッグ＆ドロップ、またはクリックして選択<br />A3見開き・B4/A4単ページ両対応</p>
+          <button
+            type="button"
+            className="btn btn-accent"
+            onClick={() => {
+              const input = document.querySelector('input[type="file"][accept=".pdf"]') as HTMLInputElement | null;
+              input?.click();
+            }}
+          >
+            PDFファイルを開く
+          </button>
         </div>
       )}
 
